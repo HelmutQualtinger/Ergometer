@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ergometer AX 4000</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f4f3f0;
+    --surface-1: #fcfcfb;
+    --border: #e3e2dd;
+    --grid: #ebeae6;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --series-1: #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page: #111110;
+      --surface-1: #1a1a19;
+      --border: #2e2e2b;
+      --grid: #2a2a28;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --series-1: #3987e5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 10px 12px;
+    background: var(--page); color: var(--text-primary);
+    font: 13px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+  h1 { font-size: 15px; font-weight: 600; margin: 0; }
+  #status { color: var(--text-secondary); font-size: 12px; text-align: right; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 8px; margin-bottom: 8px; }
+  .charts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; min-width: 0; }
+  .label { color: var(--text-secondary); font-size: 12px; }
+  .value { font-size: 21px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .unit { color: var(--text-secondary); font-size: 12px; font-weight: 400; margin-left: 3px; }
+  .plot { height: 150px; margin-top: 2px; }
+  .control { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .control input { flex: 1; min-width: 0; accent-color: var(--series-1); height: 20px; margin: 0; }
+  .control output { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 6ch; text-align: right; }
+  .control small { color: var(--text-secondary); min-width: 7ch; }
+  @media (max-width: 1100px) { .charts { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .charts { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ergometer AX 4000</h1>
+  <div id="status">Verbinde …</div>
+</header>
+<section class="tiles" id="tiles"></section>
+<section class="card control">
+  <label class="label" for="target">Zielleistung</label>
+  <input type="range" id="target" min="0" max="400" step="5" value="0" disabled>
+  <output id="target-value" for="target">aus</output>
+  <small id="target-note"></small>
+</section>
+<section class="charts" id="charts"></section>
+
+<script>
+const fmt = (digits) => (v) => v.toLocaleString("de-DE", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+// Headline numbers: [sample key, label, unit, formatter]
+const TILES = [
+  ["power", "Leistung", "W", fmt(0)],
+  ["cadence", "Trittfrequenz", "rpm", fmt(0)],
+  ["speed", "Geschwindigkeit", "km/h", fmt(1)],
+  ["heart rate", "Puls", "bpm", (v) => (v > 0 ? fmt(0)(v) : "–")],
+  ["resistance", "Widerstand", "", fmt(0)],
+  ["distance", "Distanz", "km", (v) => fmt(2)(v / 1000)],
+  ["energy", "Energie", "kcal", fmt(0)],
+  ["elapsed", "Zeit", "min", clock],
+];
+// One chart per measure - their scales differ, so they never share an axis.
+const CHARTS = [
+  ["power", "Leistung", "W"],
+  ["cadence", "Trittfrequenz", "rpm"],
+  ["speed", "Geschwindigkeit", "km/h"],
+  ["heart rate", "Puls", "bpm"],
+];
+
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+document.getElementById("tiles").innerHTML = TILES.map(([key, label, unit]) =>
+  `<div class="card"><div class="label">${label}</div>
+   <div class="value"><span data-tile="${key}">–</span><span class="unit">${unit}</span></div></div>`).join("");
+document.getElementById("charts").innerHTML = CHARTS.map(([key, label, unit]) =>
+  `<div class="card"><div class="label">${label} (${unit})</div><div class="plot" data-chart="${key}"></div></div>`).join("");
+
+const plots = CHARTS.map(([key, , unit]) => ({ key, unit, el: document.querySelector(`[data-chart="${key}"]`) }));
+
+function layout() {
+  const axis = { gridcolor: css("--grid"), linecolor: css("--border"), zeroline: false, tickfont: { size: 11 }, nticks: 5 };
+  return {
+    margin: { l: 36, r: 8, t: 4, b: 22 },
+    paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+    font: { color: css("--text-secondary"), family: "-apple-system, BlinkMacSystemFont, sans-serif" },
+    xaxis: { ...axis, type: "date", tickformat: "%H:%M:%S", showgrid: false },
+    yaxis: { ...axis, rangemode: "tozero" },
+    hovermode: "x", showlegend: false,
+    hoverlabel: { bgcolor: css("--surface-1"), bordercolor: css("--border"), font: { color: css("--text-primary") } },
+  };
+}
+
+for (const { el, unit } of plots) {
+  Plotly.newPlot(el, [{
+    x: [], y: [], mode: "lines", connectgaps: false,
+    line: { width: 2, color: css("--series-1") },
+    hovertemplate: `%{y} ${unit}<extra></extra>`,
+  }], layout(), { displayModeBar: false, responsive: true });
+}
+
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  for (const { el } of plots) {
+    Plotly.relayout(el, layout());
+    Plotly.restyle(el, { "line.color": css("--series-1") });
+  }
+});
+
+const slider = document.getElementById("target");
+const sliderValue = document.getElementById("target-value");
+const sliderNote = document.getElementById("target-note");
+const powerPlot = document.querySelector('[data-chart="power"]');
+let sliderTouched = 0;  // while the user is adjusting, don't snap back to the server's target
+
+// 0 switches the PID controller off; the target is drawn as a dashed line in the power chart.
+function showTarget(watts) {
+  sliderValue.textContent = watts > 0 ? `${watts} W` : "aus";
+  sliderNote.textContent = watts > 0 ? "PID regelt" : "";
+  Plotly.relayout(powerPlot, { shapes: watts > 0 ? [{
+    type: "line", xref: "paper", x0: 0, x1: 1, y0: watts, y1: watts,
+    line: { color: css("--text-secondary"), width: 1, dash: "dash" },
+  }] : [] });
+}
+
+slider.addEventListener("input", () => {
+  sliderTouched = Date.now();
+  sliderValue.textContent = +slider.value > 0 ? `${slider.value} W` : "aus";
+});
+slider.addEventListener("change", async () => {
+  sliderTouched = Date.now();
+  try {
+    const reply = await (await fetch("/target", { method: "POST", body: JSON.stringify({ power: +slider.value }) })).json();
+    if (reply.error) throw new Error(reply.error);
+    showTarget(reply.power);
+  } catch (error) { console.error(error); sliderNote.textContent = "Fehler"; }
+});
+
+let next = 0;
+async function poll() {
+  const status = document.getElementById("status");
+  try {
+    const data = await (await fetch(`/data?since=${next}`)).json();
+    if (data.next < next) return location.reload();  // program was restarted
+    next = data.next;
+    status.textContent = data.status;
+    slider.disabled = !data.connected;
+    [slider.min, slider.max, slider.step] = data.power_range;
+    if (Date.now() - sliderTouched > 4000 && +slider.value !== data.target_power) {
+      slider.value = data.target_power;
+      showTarget(data.target_power);
+    }
+    if (!data.samples.length) return;
+
+    const times = data.samples.map((s) => new Date(s.t));
+    for (const { key, el } of plots) {
+      // A heart rate of 0 means "no sensor", not a reading.
+      const ys = data.samples.map((s) => (key === "heart rate" && !s[key] ? null : s[key] ?? null));
+      Plotly.extendTraces(el, { x: [times], y: [ys] }, [0]);
+    }
+    const last = data.samples[data.samples.length - 1];
+    for (const [key, , , format] of TILES) {
+      if (last[key] !== undefined) document.querySelector(`[data-tile="${key}"]`).textContent = format(last[key]);
+    }
+  } catch {
+    status.textContent = "Programm nicht erreichbar";
+  }
+}
+poll();
+setInterval(poll, 1000);
+</script>
+</body>
+</html>
