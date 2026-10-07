@@ -5,6 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ergometer AX 4000</title>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+  // Remembered choices, applied before anything is drawn. The address can override them,
+  // e.g. /?language=en&theme=dark.
+  const query = new URLSearchParams(location.search);
+  const stored = (key, fallback) => {
+    try { return query.get(key.replace("ergometer-", "")) ?? localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+  };
+  const THEME = stored("ergometer-theme", "sub");
+  if (THEME !== "auto") document.documentElement.dataset.theme = THEME;
+</script>
 <style>
   :root {
     color-scheme: light;
@@ -15,9 +25,14 @@
     --text-primary: #0b0b0b;
     --text-secondary: #52514e;
     --series-1: #2a78d6;
+    --target: #e34948;
+    --series-2: #eb6834;
+    --pulse-line: var(--text-primary);  /* the pulse curve runs over coloured bands */
+    --plot-text: var(--text-secondary);  /* axis labels; differs where charts sit on their own screen */
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       color-scheme: dark;
       --page: #111110;
       --surface-1: #1a1a19;
@@ -26,164 +41,615 @@
       --text-primary: #ffffff;
       --text-secondary: #c3c2b7;
       --series-1: #3987e5;
+      --target: #e66767;
+      --series-2: #d95926;
     }
   }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #111110;
+    --surface-1: #1a1a19;
+    --border: #2e2e2b;
+    --grid: #2a2a28;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --series-1: #3987e5;
+    --target: #e66767;
+    --series-2: #d95926;
+  }
+  /* Submarine control room: black steel, red battle lighting, green phosphor readouts. */
+  :root[data-theme="sub"] {
+    color-scheme: dark;
+    --page: #050807;
+    --surface-1: #08100d;
+    --border: #1d4a37;
+    --grid: #123324;
+    --text-primary: #6dffa8;
+    --text-secondary: #e0503c;
+    --series-1: #3dff8a;
+    --target: #ff3b30;
+    --series-2: #ffb000;
+    --pulse-line: #ffffff;
+    --font: "SF Mono", Menlo, Monaco, Consolas, monospace;
+  }
+  [data-theme="sub"] body {
+    background:
+      radial-gradient(ellipse at 50% -10%, rgba(160, 20, 10, 0.28), transparent 60%),
+      radial-gradient(ellipse at 50% 120%, rgba(120, 10, 5, 0.18), transparent 55%),
+      var(--page);
+    background-attachment: fixed;
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  /* CRT scan lines over everything */
+  [data-theme="sub"] body::after {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 10;
+    background: repeating-linear-gradient(to bottom, transparent 0 2px, rgba(0, 0, 0, 0.22) 2px 3px);
+  }
+  [data-theme="sub"] h1 { color: var(--target); letter-spacing: 0.18em; text-shadow: 0 0 10px rgba(255, 59, 48, 0.7); }
+  [data-theme="sub"] h1::before { content: "★ "; }
+  [data-theme="sub"] h1::after { content: "  ·  КРАСНЫЙ ОКТЯБРЬ"; color: var(--text-secondary); font-size: 12px; }
+  /* Instrument panels: bevelled steel frame with a rivet in each corner */
+  [data-theme="sub"] .card {
+    border-radius: 3px; border-color: var(--border);
+    background:
+      radial-gradient(circle at 6px 6px, #5a6b63 0 1.5px, transparent 2px),
+      radial-gradient(circle at calc(100% - 6px) 6px, #5a6b63 0 1.5px, transparent 2px),
+      radial-gradient(circle at 6px calc(100% - 6px), #5a6b63 0 1.5px, transparent 2px),
+      radial-gradient(circle at calc(100% - 6px) calc(100% - 6px), #5a6b63 0 1.5px, transparent 2px),
+      linear-gradient(180deg, #0b1713, #060c0a);
+    box-shadow: inset 0 0 18px rgba(61, 255, 138, 0.07), inset 0 0 0 1px #000;
+    padding: 9px 14px;
+  }
+  [data-theme="sub"] .value, [data-theme="sub"] .control output { text-shadow: 0 0 8px rgba(109, 255, 168, 0.75); }
+  [data-theme="sub"] .label, [data-theme="sub"] #status { text-shadow: 0 0 6px rgba(224, 80, 60, 0.5); }
+  [data-theme="sub"] .control input { accent-color: var(--target); }
+  [data-theme="sub"] .control button, [data-theme="sub"] select {
+    border-radius: 2px; border-color: var(--target); text-transform: uppercase; letter-spacing: 0.08em;
+    background: #140807; color: var(--text-primary);
+  }
+  [data-theme="sub"] .control button:not(:disabled) { box-shadow: 0 0 8px rgba(255, 59, 48, 0.45); }
+
+  /* One Thousand and One Nights: indigo night sky, gold filigree, turquoise and ruby. */
+  :root[data-theme="nights"] {
+    color-scheme: dark;
+    --page: #0b0a26;
+    --surface-1: #15123a;
+    --border: #c9a227;
+    --grid: #2b2869;
+    --text-primary: #f8ecc2;
+    --text-secondary: #e0b84f;
+    --series-1: #2ed3c6;
+    --target: #ff4f7b;
+    --series-2: #ffb347;
+    --pulse-line: #ffffff;
+    --font: "Baskerville", "Palatino", "Book Antiqua", Georgia, serif;
+  }
+  [data-theme="nights"] body {
+    /* stars, a moon glow in the corner, and the night itself */
+    background:
+      radial-gradient(circle at 12% 18%, #fff 0 1px, transparent 1.5px),
+      radial-gradient(circle at 31% 62%, #ffe9a8 0 1px, transparent 1.5px),
+      radial-gradient(circle at 57% 9%, #fff 0 1.2px, transparent 1.7px),
+      radial-gradient(circle at 73% 44%, #ffe9a8 0 1px, transparent 1.5px),
+      radial-gradient(circle at 88% 78%, #fff 0 1px, transparent 1.5px),
+      radial-gradient(circle at 44% 88%, #fff 0 0.8px, transparent 1.3px),
+      radial-gradient(ellipse at 92% -5%, rgba(255, 226, 150, 0.30), transparent 45%),
+      linear-gradient(180deg, #171252 0%, #0b0a26 55%, #1d0b33 100%);
+    background-size: 340px 300px, 410px 370px, 290px 330px, 380px 290px, 450px 410px, 310px 350px, auto, auto;
+    background-attachment: fixed;
+    font-size: 15px;
+  }
+  [data-theme="nights"] h1 { color: var(--text-secondary); font-size: 20px; font-style: italic; letter-spacing: 0.04em;
+    text-shadow: 0 0 12px rgba(224, 184, 79, 0.55); }
+  [data-theme="nights"] h1::before { content: "☾ "; font-style: normal; }
+  [data-theme="nights"] h1::after { content: "  ✦  ألف ليلة وليلة"; font-style: normal; font-size: 17px; }
+  /* Panels like palace niches: arched top, gold double frame, tiled star pattern */
+  [data-theme="nights"] .card {
+    border: 1px solid var(--border); border-radius: 22px 22px 6px 6px;
+    outline: 1px solid rgba(201, 162, 39, 0.35); outline-offset: -5px;
+    background:
+      repeating-conic-gradient(from 45deg at 50% 50%, rgba(201, 162, 39, 0.045) 0 25%, transparent 0 50%) 0 0 / 22px 22px,
+      linear-gradient(180deg, #1c1850, #110e33);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45), inset 0 0 24px rgba(46, 211, 198, 0.06);
+    padding: 11px 16px 9px;
+  }
+  [data-theme="nights"] .value, [data-theme="nights"] .control output { text-shadow: 0 0 10px rgba(248, 236, 194, 0.4); }
+  [data-theme="nights"] .label { letter-spacing: 0.03em; }
+  [data-theme="nights"] .control input { accent-color: var(--series-1); }
+  [data-theme="nights"] .control button, [data-theme="nights"] select {
+    border-radius: 999px; border-color: var(--border); background: #231d5c; color: var(--text-primary);
+  }
+  [data-theme="nights"] .control button:not(:disabled) { background: linear-gradient(180deg, #e0b84f, #a8801c); color: #1a1238; }
+
+  /* Soviet nuclear power station control room: green enamel panels, black display windows
+     with green digits, oscilloscope screens, hazard stripes and a red emergency button. */
+  :root[data-theme="reactor"] {
+    color-scheme: light;
+    --page: #4d6853;
+    --surface-1: #c3d1b8;
+    --border: #26332a;
+    --grid: #1d4526;
+    --text-primary: #131c16;
+    --text-secondary: #26332a;
+    --plot-text: #9fe89a;
+    --series-1: #6dff5a;
+    --target: #ff5a3c;
+    --series-2: #ffd23f;
+    --pulse-line: #ffffff;
+    --font: "DIN Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  }
+  [data-theme="reactor"] body {
+    /* painted wall with panel seams */
+    background:
+      repeating-linear-gradient(90deg, transparent 0 239px, rgba(0, 0, 0, 0.22) 239px 240px, rgba(255, 255, 255, 0.07) 240px 241px),
+      linear-gradient(180deg, #5b7861, #3f5644);
+    background-attachment: fixed;
+    text-transform: uppercase; letter-spacing: 0.07em; font-size: 16px;
+  }
+  [data-theme="reactor"] header {
+    padding-bottom: 8px;
+    border-bottom: 6px solid; border-image: repeating-linear-gradient(-45deg, #f2c200 0 12px, #15150f 12px 24px) 6;
+  }
+  [data-theme="reactor"] h1 { color: #eef3e6; font-size: 21px; letter-spacing: 0.14em; text-shadow: 0 1px 0 #000; }
+  [data-theme="reactor"] h1::before { content: "☢ "; color: #f2c200; }
+  [data-theme="reactor"] h1::after { content: "  ·  АЭС  ·  ЩИТ УПРАВЛЕНИЯ"; color: #cfe0c4; font-size: 15px; }
+  [data-theme="reactor"] #status { color: #eef3e6; }
+  /* enamel panel held by four screws */
+  [data-theme="reactor"] .card {
+    border: 2px solid var(--border); border-radius: 4px;
+    background:
+      radial-gradient(circle at 8px 8px, #6c7a6c 0 2.5px, #26332a 2.5px 3.5px, transparent 4px),
+      radial-gradient(circle at calc(100% - 8px) 8px, #6c7a6c 0 2.5px, #26332a 2.5px 3.5px, transparent 4px),
+      radial-gradient(circle at 8px calc(100% - 8px), #6c7a6c 0 2.5px, #26332a 2.5px 3.5px, transparent 4px),
+      radial-gradient(circle at calc(100% - 8px) calc(100% - 8px), #6c7a6c 0 2.5px, #26332a 2.5px 3.5px, transparent 4px),
+      linear-gradient(180deg, #d0dcc5, #b4c4a8);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 3px 8px rgba(0, 0, 0, 0.4);
+    padding: 10px 18px;
+  }
+  /* numbers sit in black display windows */
+  [data-theme="reactor"] .value, [data-theme="reactor"] .control output {
+    display: inline-block; margin-top: 3px; padding: 1px 10px; border-radius: 3px;
+    background: #0a130b; color: #7dff6a; border: 1px solid #000;
+    box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.9), 0 1px 0 rgba(255, 255, 255, 0.5);
+    font-family: "SF Mono", Menlo, monospace; text-transform: none; letter-spacing: 0;
+    text-shadow: 0 0 7px rgba(125, 255, 106, 0.7);
+  }
+  [data-theme="reactor"] .unit { color: #4fae45; }
+  /* charts are oscilloscope screens let into the panel */
+  [data-theme="reactor"] .plot {
+    background: #0a130b; border: 2px solid #111; border-radius: 6px; margin-top: 5px;
+    box-shadow: inset 0 0 22px rgba(0, 0, 0, 0.9), 0 1px 0 rgba(255, 255, 255, 0.5);
+  }
+  [data-theme="reactor"] .control input { accent-color: #c8281e; }
+  [data-theme="reactor"] select {
+    border-radius: 3px; border: 2px solid #111; background: #0a130b; color: #7dff6a;
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  /* the emergency button */
+  [data-theme="reactor"] .control button {
+    border-radius: 4px; border: 2px solid #111; padding: 3px 16px; color: #fff; text-transform: uppercase; letter-spacing: 0.1em;
+    background: linear-gradient(180deg, #e2392c, #a81d14); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 2px 0 #000;
+  }
+
   * { box-sizing: border-box; }
   body {
     margin: 0; padding: 10px 12px;
     background: var(--page); color: var(--text-primary);
-    font: 13px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font: 700 14px/1.3 var(--font);
   }
-  header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
-  h1 { font-size: 15px; font-weight: 600; margin: 0; }
-  #status { color: var(--text-secondary); font-size: 12px; text-align: right; }
+  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+  header { align-items: center; }
+  header select { font: inherit; font-size: 22px; line-height: 1; color: var(--text-primary); background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; cursor: pointer; }
+  h1 { font-size: 17px; font-weight: 700; margin: 0; }
+  #status { color: var(--text-secondary); font-size: 13px; text-align: right; flex: 1; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 8px; margin-bottom: 8px; }
-  .charts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .charts { display: grid; grid-template-columns: 1fr; gap: 8px; }
   .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; min-width: 0; }
-  .label { color: var(--text-secondary); font-size: 12px; }
-  .value { font-size: 21px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .unit { color: var(--text-secondary); font-size: 12px; font-weight: 400; margin-left: 3px; }
+  .label { color: var(--text-secondary); font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .value { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .unit { color: var(--text-secondary); font-size: 13px; font-weight: 700; margin-left: 3px; }
   .plot { height: 150px; margin-top: 2px; }
+  .key { float: right; }
+  .key i { display: inline-block; width: 16px; margin: 0 4px 3px 8px; border-top: 2px solid var(--series-1); }
+  .key i.target { border-top-color: var(--target); }
+  .key i.bands { border-top-color: var(--pulse-line); }
+  .key i.second { border-top-color: var(--series-2); }
+  .control button, .control select { font: inherit; color: var(--text-primary); background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 6px; padding: 2px 10px; cursor: pointer; white-space: nowrap; }
+  .control button:disabled { opacity: 0.5; cursor: default; }
   .control { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
   .control input { flex: 1; min-width: 0; accent-color: var(--series-1); height: 20px; margin: 0; }
-  .control output { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 6ch; text-align: right; }
-  .control small { color: var(--text-secondary); min-width: 7ch; }
-  @media (max-width: 1100px) { .charts { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 560px) { .charts { grid-template-columns: 1fr; } }
+  .control output { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 6ch; text-align: right; }
+  .control small { color: var(--text-secondary); }
 </style>
 </head>
 <body>
 <header>
   <h1>Ergometer AX 4000</h1>
-  <div id="status">Verbinde …</div>
+  <div id="status"></div>
+  <select id="theme" aria-label="Theme"></select>
+  <select id="language" aria-label="Language"></select>
 </header>
 <section class="tiles" id="tiles"></section>
 <section class="card control">
-  <label class="label" for="target">Zielleistung</label>
+  <label class="label" for="target" data-text="target"></label>
   <input type="range" id="target" min="0" max="400" step="5" value="0" disabled>
-  <output id="target-value" for="target">aus</output>
+  <output id="target-value" for="target"></output>
   <small id="target-note"></small>
+</section>
+<section class="card control">
+  <label class="label" for="profile-select" data-text="profile"></label>
+  <select id="profile-select"><option value="" data-text="none"></option></select>
+  <button id="profile-run" disabled></button>
+  <span class="label" id="profile-info"></span>
 </section>
 <section class="charts" id="charts"></section>
 
 <script>
-const fmt = (digits) => (v) => v.toLocaleString("de-DE", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+// Every text of the panel in each language. `locale` sets the number format.
+const TEXTS = {
+  de: { locale: "de-DE", power: "Leistung", cadence: "Trittfrequenz", speed: "Geschwindigkeit", pulse: "Puls",
+        resistance: "Widerstand", distance: "Distanz", energy: "Energie", time: "Zeit", target: "Zielleistung",
+        off: "aus", profile: "Vorgabe", none: "keine", start: "Start", stop: "Stopp", actual: "Ist",
+        setpoint: "Vorgabe", setpointShort: "Soll", level: "Stufe", leftAxis: "linke Achse", rightAxis: "rechte Achse",
+        and: "und", unreachable: "Programm nicht erreichbar", error: "Fehler", auto: "Auto", light: "Hell", dark: "Dunkel",
+        scanning: "Suche Ergometer …", connecting: "Verbinde mit", connected: "Verbunden mit",
+        notFound: "Ergometer nicht gefunden", disconnected: "Ergometer getrennt" },
+  it: { locale: "it-IT", power: "Potenza", cadence: "Cadenza", speed: "Velocità", pulse: "Battito",
+        resistance: "Resistenza", distance: "Distanza", energy: "Energia", time: "Tempo", target: "Potenza obiettivo",
+        off: "spento", profile: "Profilo", none: "nessuno", start: "Avvia", stop: "Ferma", actual: "Reale",
+        setpoint: "Obiettivo", setpointShort: "Obiettivo", level: "Livello", leftAxis: "asse sinistro", rightAxis: "asse destro",
+        and: "e", unreachable: "Programma non raggiungibile", error: "Errore", auto: "Auto", light: "Chiaro", dark: "Scuro",
+        scanning: "Ricerca ergometro …", connecting: "Connessione a", connected: "Connesso a",
+        notFound: "Ergometro non trovato", disconnected: "Ergometro disconnesso" },
+  en: { locale: "en-GB", power: "Power", cadence: "Cadence", speed: "Speed", pulse: "Heart rate",
+        resistance: "Resistance", distance: "Distance", energy: "Energy", time: "Time", target: "Target power",
+        off: "off", profile: "Profile", none: "none", start: "Start", stop: "Stop", actual: "Actual",
+        setpoint: "Target", setpointShort: "Target", level: "Level", leftAxis: "left axis", rightAxis: "right axis",
+        and: "and", unreachable: "Program not reachable", error: "Error", auto: "Auto", light: "Light", dark: "Dark",
+        scanning: "Searching for ergometer …", connecting: "Connecting to", connected: "Connected to",
+        notFound: "Ergometer not found", disconnected: "Ergometer disconnected" },
+  es: { locale: "es-ES", power: "Potencia", cadence: "Cadencia", speed: "Velocidad", pulse: "Pulso",
+        resistance: "Resistencia", distance: "Distancia", energy: "Energía", time: "Tiempo", target: "Potencia objetivo",
+        off: "apagado", profile: "Perfil", none: "ninguno", start: "Iniciar", stop: "Parar", actual: "Real",
+        setpoint: "Objetivo", setpointShort: "Objetivo", level: "Nivel", leftAxis: "eje izquierdo", rightAxis: "eje derecho",
+        and: "y", unreachable: "Programa no disponible", error: "Error", auto: "Auto", light: "Claro", dark: "Oscuro",
+        scanning: "Buscando ergómetro …", connecting: "Conectando con", connected: "Conectado a",
+        notFound: "Ergómetro no encontrado", disconnected: "Ergómetro desconectado" },
+  fr: { locale: "fr-FR", power: "Puissance", cadence: "Cadence", speed: "Vitesse", pulse: "Pouls",
+        resistance: "Résistance", distance: "Distance", energy: "Énergie", time: "Temps", target: "Puissance cible",
+        off: "arrêt", profile: "Profil", none: "aucun", start: "Démarrer", stop: "Arrêter", actual: "Réel",
+        setpoint: "Cible", setpointShort: "Cible", level: "Niveau", leftAxis: "axe gauche", rightAxis: "axe droit",
+        and: "et", unreachable: "Programme injoignable", error: "Erreur", auto: "Auto", light: "Clair", dark: "Sombre",
+        scanning: "Recherche de l'ergomètre …", connecting: "Connexion à", connected: "Connecté à",
+        notFound: "Ergomètre introuvable", disconnected: "Ergomètre déconnecté" },
+  cn: { locale: "zh-CN", power: "功率", cadence: "踏频", speed: "速度", pulse: "心率",
+        resistance: "阻力", distance: "距离", energy: "能量", time: "时间", target: "目标功率",
+        off: "关", profile: "方案", none: "无", start: "开始", stop: "停止", actual: "实际",
+        setpoint: "目标", setpointShort: "目标", level: "档位", leftAxis: "左轴", rightAxis: "右轴",
+        and: "和", unreachable: "无法连接程序", error: "错误", auto: "自动", light: "浅色", dark: "深色",
+        scanning: "正在搜索测功车…", connecting: "正在连接", connected: "已连接",
+        notFound: "未找到测功车", disconnected: "测功车已断开" },
+  jp: { locale: "ja-JP", power: "パワー", cadence: "ケイデンス", speed: "速度", pulse: "心拍数",
+        resistance: "負荷", distance: "距離", energy: "エネルギー", time: "時間", target: "目標パワー",
+        off: "オフ", profile: "プロファイル", none: "なし", start: "開始", stop: "停止", actual: "実測",
+        setpoint: "目標", setpointShort: "目標", level: "レベル", leftAxis: "左軸", rightAxis: "右軸",
+        and: "と", unreachable: "プログラムに接続できません", error: "エラー", auto: "自動", light: "ライト", dark: "ダーク",
+        scanning: "エルゴメーターを検索中…", connecting: "接続中:", connected: "接続済み:",
+        notFound: "エルゴメーターが見つかりません", disconnected: "エルゴメーターが切断されました" },
+};
+const LANGUAGE = stored("ergometer-language", "de") in TEXTS ? stored("ergometer-language", "de") : "de";
+const T = TEXTS[LANGUAGE];
+document.documentElement.lang = T.locale.slice(0, 2);
+for (const el of document.querySelectorAll("[data-text]")) el.textContent = T[el.dataset.text];
+
+// Theme and language are read once when the page is built, so changing either reloads it.
+function chooser(id, key, current, options) {
+  const select = document.getElementById(id);
+  for (const [value, label] of options) select.add(new Option(label, value, false, value === current));
+  select.addEventListener("change", () => {
+    try { localStorage.setItem(key, select.value); } catch {}
+    location.replace(location.pathname);  // drops any override in the address, which would win otherwise
+  });
+}
+const FLAGS = { de: "🇩🇪", it: "🇮🇹", en: "🇬🇧", es: "🇪🇸", fr: "🇫🇷", cn: "🇨🇳", jp: "🇯🇵" };
+chooser("theme", "ergometer-theme", THEME, [["sub", "⚓"], ["nights", "🪔"], ["reactor", "☢️"], ["auto", "🌗"], ["light", "☀️"], ["dark", "🌙"]]);
+chooser("language", "ergometer-language", LANGUAGE, Object.keys(TEXTS).map((code) => [code, FLAGS[code]]));
+
+// The program reports its state in English; show it in the chosen language.
+function translateStatus(text) {
+  const device = text.match(/(?:Connecting|Connected) to (\S+)/)?.[1] ?? "";
+  if (text.startsWith("Scanning")) return T.scanning;
+  if (text.startsWith("Connecting")) return `${T.connecting} ${device} …`;
+  if (text.startsWith("Connected")) return `${T.connected} ${device}`;
+  if (text.includes("not found")) return T.notFound;
+  if (text.includes("disconnected")) return T.disconnected;
+  return text;
+}
+
+const fmt = (digits) => (v) => v.toLocaleString(T.locale, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 // Headline numbers: [sample key, label, unit, formatter]
 const TILES = [
-  ["power", "Leistung", "W", fmt(0)],
-  ["cadence", "Trittfrequenz", "rpm", fmt(0)],
-  ["speed", "Geschwindigkeit", "km/h", fmt(1)],
-  ["heart rate", "Puls", "bpm", (v) => (v > 0 ? fmt(0)(v) : "–")],
-  ["resistance", "Widerstand", "", fmt(0)],
-  ["distance", "Distanz", "km", (v) => fmt(2)(v / 1000)],
-  ["energy", "Energie", "kcal", fmt(0)],
-  ["elapsed", "Zeit", "min", clock],
+  ["power", T.power, "W", fmt(0)],
+  ["cadence", T.cadence, "rpm", fmt(0)],
+  ["speed", T.speed, "km/h", fmt(1)],
+  ["heart rate", T.pulse, "bpm", (v) => (v > 0 ? fmt(0)(v) : "–")],
+  ["resistance", T.resistance, "", fmt(0)],
+  ["distance", T.distance, "km", (v) => fmt(2)(v / 1000)],
+  ["energy", T.energy, "kcal", fmt(0)],
+  ["elapsed", T.time, "min", clock],
 ];
-// One chart per measure - their scales differ, so they never share an axis.
+// One full-width row per chart: [sample key, label, unit, legend, second sample key drawn in the same chart]
 const CHARTS = [
-  ["power", "Leistung", "W"],
-  ["cadence", "Trittfrequenz", "rpm"],
-  ["speed", "Geschwindigkeit", "km/h"],
-  ["heart rate", "Puls", "bpm"],
+  ["power", T.power, "W", `<i class="bands"></i>${T.actual} <i class="target"></i>${T.setpoint}`, "target"],
+  ["cadence", `${T.cadence} (rpm) ${T.and} ${T.resistance}`, T.level,
+   `<i></i>${T.cadence}, ${T.leftAxis} <i class="second"></i>${T.resistance}, ${T.rightAxis}`, "resistance"],
+  ["heart rate", T.pulse, "bpm"],
+  ["speed", T.speed, "km/h"],
 ];
+
+const WINDOW_SECONDS = 20 * 60;  // the charts show a sliding window this far back
+const LOOKAHEAD_SECONDS = 2 * 60;  // while a profile runs, this much of what is coming is shown
+// Heart rate zones drawn behind the pulse curve: [from bpm, to bpm, colour]
+const PULSE_BANDS = [
+  [60, 80, "#1c4f95"],    // dark blue
+  [80, 90, "#1e7a34"],    // dark green
+  [90, 100, "#7fd67f"],   // light green
+  [100, 110, "#f2d024"],  // yellow
+  [110, 120, "#f08a24"],  // orange
+  [120, 130, "#f07070"],  // light red
+  [130, 140, "#b01e1e"],  // dark red
+  [140, 160, "#8a3fc0"],  // purple
+];
+// The power chart uses the same colours, spread evenly over this range in watts.
+const POWER_BAND_RANGE = [80, 300];
+const POWER_BANDS = PULSE_BANDS.map(([, , color], i, all) => {
+  const [min, max] = POWER_BAND_RANGE, step = (max - min) / all.length;
+  return [min + i * step, min + (i + 1) * step, color];
+});
+const BANDS = { "heart rate": PULSE_BANDS, power: POWER_BANDS };
+// The colour of the band a value falls into; values outside the bands take the nearest one.
+const bandColor = (bands, v) => (bands.find(([, to]) => v < to) ?? bands[bands.length - 1])[2];
+
+// The time axis counts from the press on "Start". Plotly's date axis has no time
+// zone, so an elapsed time is handed over as a clock time on 1970-01-01 and shown as mm:ss.
+let firstTime = Date.now();
+const rel = (ms) => new Date(Math.max(ms - firstTime, 0)).toISOString().slice(0, 19).replace("T", " ");
+
+const CADENCE_BAND = [72, 82, "#7fd67f"];  // target cadence range in rpm, light green
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 document.getElementById("tiles").innerHTML = TILES.map(([key, label, unit]) =>
-  `<div class="card"><div class="label">${label}</div>
+  `<div class="card"><div class="label" data-label="${key}">${label}</div>
    <div class="value"><span data-tile="${key}">–</span><span class="unit">${unit}</span></div></div>`).join("");
-document.getElementById("charts").innerHTML = CHARTS.map(([key, label, unit]) =>
-  `<div class="card"><div class="label">${label} (${unit})</div><div class="plot" data-chart="${key}"></div></div>`).join("");
+document.getElementById("charts").innerHTML = CHARTS.map(([key, label, unit, legend]) =>
+  `<div class="card"><div class="label">${label} (${unit})${legend ? ` <span class="key">${legend}</span>` : ""}</div>
+   <div class="plot" data-chart="${key}"></div></div>`).join("");
 
-const plots = CHARTS.map(([key, , unit]) => ({ key, unit, el: document.querySelector(`[data-chart="${key}"]`) }));
+const plots = CHARTS.map(([key, , unit, , second]) => ({ key, unit, second, el: document.querySelector(`[data-chart="${key}"]`) }));
 
-function layout() {
-  const axis = { gridcolor: css("--grid"), linecolor: css("--border"), zeroline: false, tickfont: { size: 11 }, nticks: 5 };
-  return {
-    margin: { l: 36, r: 8, t: 4, b: 22 },
+function layout(key) {
+  const axis = { gridcolor: css("--grid"), linecolor: css("--border"), zeroline: false, tickfont: { size: 12.5 }, nticks: 5 };
+  const result = {
+    margin: { l: 40, r: 40, t: 8, b: 24 },
     paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
-    font: { color: css("--text-secondary"), family: "-apple-system, BlinkMacSystemFont, sans-serif" },
-    xaxis: { ...axis, type: "date", tickformat: "%H:%M:%S", showgrid: false },
+    font: { color: css("--plot-text"), family: css("--font"), weight: 700 },
+    xaxis: { ...axis, type: "date", tickformat: "%M:%S", hoverformat: "%H:%M:%S", showgrid: THEME === "sub" },  // sonar grid
     yaxis: { ...axis, rangemode: "tozero" },
     hovermode: "x", showlegend: false,
     hoverlabel: { bgcolor: css("--surface-1"), bordercolor: css("--border"), font: { color: css("--text-primary") } },
   };
-}
-
-for (const { el, unit } of plots) {
-  Plotly.newPlot(el, [{
-    x: [], y: [], mode: "lines", connectgaps: false,
-    line: { width: 2, color: css("--series-1") },
-    hovertemplate: `%{y} ${unit}<extra></extra>`,
-  }], layout(), { displayModeBar: false, responsive: true });
-}
-
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-  for (const { el } of plots) {
-    Plotly.relayout(el, layout());
-    Plotly.restyle(el, { "line.color": css("--series-1") });
+  const bands = BANDS[key];
+  if (bands) {
+    const edges = [...new Set(bands.flatMap(([from, to]) => [from, to]))];
+    result.yaxis = { ...axis, tickvals: edges, tickformat: ".0f", showgrid: false };
+    // The pulse axis is fixed to its bands; poll() widens the power axis when the power leaves them.
+    result.yaxis.range = [edges[0], edges[edges.length - 1]];
+    // The outer bands run on past their edge, so there is a colour behind every value.
+    result.shapes = bands.map(([from, to, color], i) => ({
+      type: "rect", layer: "below", xref: "paper", x0: 0, x1: 1,
+      y0: i ? from : 0, y1: i < bands.length - 1 ? to : to * 10,
+      fillcolor: color, opacity: 0.75, line: { width: 0 },
+    }));
   }
-});
+  if (key === "cadence") {
+    // Cadence and resistance share the chart but not the scale: each has its own y axis,
+    // with tick labels in the colour of its curve.
+    result.yaxis.tickfont = { size: 12.5, color: css("--series-1") };
+    const [from, to, color] = CADENCE_BAND;
+    result.yaxis = { ...result.yaxis, rangemode: "normal", range: [50, 100], dtick: 10 };
+    result.shapes = [{
+      type: "rect", layer: "below", xref: "paper", yref: "y", x0: 0, x1: 1, y0: from, y1: to,
+      fillcolor: color, opacity: 0.45, line: { width: 0 },
+    }];
+    result.yaxis2 = { ...axis, overlaying: "y", side: "right", range: [0, 24], dtick: 6, showgrid: false,
+                      tickfont: { size: 12.5, color: css("--series-2") } };
+  }
+  return result;
+}
+
+// The pulse and power curves run over coloured bands, so they are drawn in the text colour instead of blue.
+const lineColor = (key) => css(BANDS[key] ? "--pulse-line" : "--series-1");
+
+for (const { key, el, unit } of plots) {
+  const traces = [{
+    x: [], y: [], mode: "lines", connectgaps: false,
+    line: { width: 2, color: lineColor(key) },
+    hovertemplate: `%{y} ${unit}<extra></extra>`,
+  }];
+  if (key === "cadence") {
+    traces.push({
+      x: [], y: [], mode: "lines", connectgaps: false, yaxis: "y2",
+      line: { width: 2, shape: "hv", color: css("--series-2") },
+      hovertemplate: `${T.level} %{y}<extra></extra>`,
+    });
+  }
+  if (key === "power") {
+    traces.push({
+      x: [], y: [], mode: "lines", connectgaps: false,
+      line: { width: 2, shape: "hv", color: css("--target") },
+      hovertemplate: `${T.setpoint} %{y} W<extra></extra>`,
+    }, {
+      // The whole profile from the file, including what is still to come.
+      x: [], y: [], mode: "lines", hoverinfo: "skip",
+      line: { width: 1.5, shape: "hv", dash: "dot", color: css("--target") },
+    });
+  }
+  Plotly.newPlot(el, traces, layout(key), { displayModeBar: false, responsive: true });
+}
+
+// The chart colours are read from CSS when the charts are built, so a theme change rebuilds the page.
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (THEME === "auto") location.reload(); });
 
 const slider = document.getElementById("target");
 const sliderValue = document.getElementById("target-value");
 const sliderNote = document.getElementById("target-note");
-const powerPlot = document.querySelector('[data-chart="power"]');
 let sliderTouched = 0;  // while the user is adjusting, don't snap back to the server's target
+sliderValue.textContent = T.off;
 
-// 0 switches the PID controller off; the target is drawn as a dashed line in the power chart.
+// 0 switches the power control off.
 function showTarget(watts) {
-  sliderValue.textContent = watts > 0 ? `${watts} W` : "aus";
-  sliderNote.textContent = watts > 0 ? "PID regelt" : "";
-  Plotly.relayout(powerPlot, { shapes: watts > 0 ? [{
-    type: "line", xref: "paper", x0: 0, x1: 1, y0: watts, y1: watts,
-    line: { color: css("--text-secondary"), width: 1, dash: "dash" },
-  }] : [] });
+  sliderValue.textContent = watts > 0 ? `${watts} W` : T.off;
+  document.querySelector('[data-label="power"]').textContent = watts > 0 ? `${T.power} · ${T.setpointShort} ${watts} W` : T.power;
 }
 
 slider.addEventListener("input", () => {
   sliderTouched = Date.now();
-  sliderValue.textContent = +slider.value > 0 ? `${slider.value} W` : "aus";
+  sliderValue.textContent = +slider.value > 0 ? `${slider.value} W` : T.off;
 });
-slider.addEventListener("change", async () => {
+async function sendTarget() {
   sliderTouched = Date.now();
   try {
-    const reply = await (await fetch("/target", { method: "POST", body: JSON.stringify({ power: +slider.value }) })).json();
+    const body = JSON.stringify({ power: +slider.value });
+    const reply = await (await fetch("/target", { method: "POST", body })).json();
     if (reply.error) throw new Error(reply.error);
+    sliderNote.textContent = "";
     showTarget(reply.power);
-  } catch (error) { console.error(error); sliderNote.textContent = "Fehler"; }
-});
+  } catch (error) { console.error(error); sliderNote.textContent = T.error; }
+}
+slider.addEventListener("change", sendTarget);
 
-let next = 0;
+// Power profiles are the vorgabe-<name>.csv files next to the program, which also parses them.
+const profileSelect = document.getElementById("profile-select");
+const profileRun = document.getElementById("profile-run");
+const profileInfo = document.getElementById("profile-info");
+const powerPlot = document.querySelector('[data-chart="power"]');
+let profileShown = "", profileTouched = 0;
+
+async function postProfile(request) {
+  try {
+    const reply = await (await fetch("/profile", { method: "POST", body: JSON.stringify(request) })).json();
+    if (reply.error) throw new Error(reply.error);
+    showProfile(reply.profile);
+  } catch (error) { console.error(error); profileInfo.textContent = `${T.error}: ${error.message}`; }
+}
+profileSelect.addEventListener("change", () => { profileTouched = Date.now(); postProfile({ name: profileSelect.value }); });
+const profileLabel = (name) => name.replace(/^vorgabe-|\.csv$/g, "");
+
+function showProfileList(names) {
+  const listed = [...profileSelect.options].slice(1).map((option) => option.value);
+  if (names.join("|") === listed.join("|")) return;
+  profileSelect.length = 1;  // keep "none"
+  for (const name of names) profileSelect.add(new Option(profileLabel(name), name));
+}
+profileRun.addEventListener("click", () => postProfile({ action: profileRun.dataset.action }));
+
+// The curves only run between "Start" and "Stop". Before the start the charts stand at 00:00;
+// after the stop they stay as they are until another profile is chosen or started.
+let runStart = null, runName = "";
+function syncRun(profile) {
+  const start = profile?.start ?? null;
+  const fresh = start && start !== runStart;
+  if (fresh || (!start && runStart && profile?.name !== runName)) {
+    runStart = fresh ? start : null;
+    runName = fresh ? profile.name : "";
+    for (const { el, second } of plots) Plotly.restyle(el, { x: [[]], y: [[]] }, second ? [0, 1] : [0]);
+  }
+  if (!runStart) firstTime = Date.now();
+  else firstTime = runStart;
+}
+
+function showProfile(profile) {
+  syncRun(profile);
+  profileRun.disabled = !profile;
+  profileRun.dataset.action = profile?.start ? "stop" : "start";
+  profileRun.textContent = profile?.start ? T.stop : T.start;
+  if (Date.now() - profileTouched > 4000) profileSelect.value = profile?.name ?? "";
+  const total = profile ? profile.steps[profile.steps.length - 1][0] : 0;
+  const elapsed = profile?.start ? Math.min((Date.now() - profile.start) / 1000, total) : 0;
+  profileInfo.textContent = profile ? `${profile.start ? clock(elapsed) + " / " : ""}${clock(total)} min` : "";
+
+  // A chosen profile is previewed from 00:00 until "Start" pins it. Once pinned it is only
+  // redrawn when the file or start changes, and it stays in place after the stop.
+  const shown = profile ? `${profile.name}|${profile.start}|${profile.steps.length}` : "";
+  if (shown === profileShown || (runStart && !profile?.start)) return;
+  profileShown = shown;
+  const origin = profile?.start ?? Date.now();
+  const x = profile ? profile.steps.map(([seconds]) => rel(origin + seconds * 1000)) : [];
+  const y = profile ? profile.steps.map(([, watts]) => watts) : [];
+  Plotly.restyle(powerPlot, { x: [x], y: [y] }, [2]);
+}
+
+let next = 0, panelVersion = 0;
 async function poll() {
   const status = document.getElementById("status");
   try {
     const data = await (await fetch(`/data?since=${next}`)).json();
     if (data.next < next) return location.reload();  // program was restarted
+    if (panelVersion && data.panel_version && data.panel_version !== panelVersion) return location.reload();
+    panelVersion = data.panel_version;
     next = data.next;
-    status.textContent = data.status;
+    status.textContent = translateStatus(data.status);
     slider.disabled = !data.connected;
+    const now = Date.now();
+    showProfileList(data.profiles);
+    showProfile(data.profile);
     [slider.min, slider.max, slider.step] = data.power_range;
     if (Date.now() - sliderTouched > 4000 && +slider.value !== data.target_power) {
       slider.value = data.target_power;
       showTarget(data.target_power);
     }
-    if (!data.samples.length) return;
-
-    const times = data.samples.map((s) => new Date(s.t));
-    for (const { key, el } of plots) {
-      // A heart rate of 0 means "no sensor", not a reading.
-      const ys = data.samples.map((s) => (key === "heart rate" && !s[key] ? null : s[key] ?? null));
-      Plotly.extendTraces(el, { x: [times], y: [ys] }, [0]);
-    }
+    // The curves start at the left edge; the window only slides once they would run out on the right.
+    const ahead = data.profile ? LOOKAHEAD_SECONDS : 0;
+    const left = Math.max(firstTime, now + (ahead - WINDOW_SECONDS) * 1000);
+    const range = [rel(left), rel(left + WINDOW_SECONDS * 1000)];
+    // Past the first hour the labels need the hour as well.
+    const tickformat = left + WINDOW_SECONDS * 1000 - firstTime >= 3600e3 ? "%-H:%M:%S" : "%M:%S";
+    const running = !!data.profile?.start;
+    // A stopped run keeps its window.
+    if (running || !runStart) for (const { el } of plots) Plotly.relayout(el, { "xaxis.range": range, "xaxis.tickformat": tickformat });
+    // The tiles always show the newest values, the curves only what was measured since "Start".
+    // Only the newest samples can be inside the window (the ergometer sends about two per second).
     const last = data.samples[data.samples.length - 1];
+    const samples = running ? data.samples.filter((s) => s.t >= runStart).slice(-WINDOW_SECONDS * 4) : [];
+
+    const times = samples.map((s) => rel(s.t));
+    for (const { key, second, el } of samples.length ? plots : []) {
+      // A heart rate of 0 means "no sensor", not a reading.
+      const ys = samples.map((s) => (key === "heart rate" && !s[key] ? null : s[key] ?? null));
+      const update = { x: [times], y: [ys] }, traces = [0];
+      if (second) {
+        update.x.push(times); update.y.push(samples.map((s) => s[second] ?? null)); traces.push(1);
+      }
+      // Points older than the window are dropped, so the y axis fits what is visible.
+      Plotly.extendTraces(el, update, traces, WINDOW_SECONDS * 4);
+    }
+    // The power axis always shows all bands and grows to fit the curves and the profile.
+    const watts = powerPlot.data.flatMap((trace) => trace.y).filter((v) => v != null);
+    Plotly.relayout(powerPlot, { "yaxis.range": [Math.min(POWER_BAND_RANGE[0], ...watts), Math.max(POWER_BAND_RANGE[1], ...watts)] });
     for (const [key, , , format] of TILES) {
-      if (last[key] !== undefined) document.querySelector(`[data-tile="${key}"]`).textContent = format(last[key]);
+      if (last?.[key] === undefined) continue;
+      const tile = document.querySelector(`[data-tile="${key}"]`);
+      tile.textContent = format(last[key]);
+      // Pulse and power are shown in the colour of the band they are in.
+      if (BANDS[key]) tile.style.color = last[key] > 0 ? bandColor(BANDS[key], last[key]) : "";
     }
   } catch {
-    status.textContent = "Programm nicht erreichbar";
+    status.textContent = T.unreachable;
   }
 }
 poll();

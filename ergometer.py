@@ -10,6 +10,7 @@ Usage:
     uv run ergometer.py --scan          # just list nearby BLE devices
     uv run ergometer.py --panel         # also show a live Plotly panel in the browser
     uv run ergometer.py --power 150     # hold 150 W by adjusting the resistance (PID)
+    uv run ergometer.py --panel --profile vorgabe-hit.csv   # follow a power profile from a file
     uv run ergometer.py --raw           # also dump the vendor-specific raw data
     uv run ergometer.py --name FS-1837  # match on a different name fragment
     uv run ergometer.py --address <id>  # connect to a specific device
@@ -17,8 +18,13 @@ Usage:
 
 import argparse
 import asyncio
+import csv
 import json
+import os
+import re
+import shutil
 import struct
+import subprocess
 import threading
 import time
 import webbrowser
@@ -44,6 +50,7 @@ PID_KI = 0.008   # levels per W*s
 PID_KD = 0.005   # levels per W/s
 PID_DEADBAND = 0.6  # only move when the output is this far from the current level
 PID_TOLERANCE = 8   # W; smaller errors count as zero, so it doesn't hunt between two levels
+WATTS_PER_LEVEL = 17  # rough effect of one level; used to jump ahead when the target changes
 MIN_CADENCE = 20    # rpm; below this the rider has stopped and the controller holds
 
 # The AX 4000 advertises under its FitShow module name, e.g. "FS-1837D8".
@@ -106,7 +113,87 @@ STATUS = {"text": "starting"}
 PANEL_HTML = Path(__file__).with_name("panel.html")
 # Set once connected, so the panel's HTTP thread can send commands to the ergometer.
 CONTROL = {"loop": None, "client": None, "range": None, "power_range": [0, 400, 5],
-           "target_power": 0, "write_offset": 0}
+           "target_power": 0, "write_offset": 0,
+           # Power profile from a file: {"name", "steps": [[seconds, watts], ...], "start": epoch ms or None}
+           "profile": None,
+           # Epoch ms of the "Start" press while a recording runs; see save_log().
+           "log_start": None}
+LOG_DIR = PANEL_HTML.parent / "logs"
+
+
+def parse_profile(text: str) -> list[list[float]]:
+    """Read "mm:ss,watt" rows; each row sets the target power from that time on."""
+    steps = []
+    for line in text.splitlines():
+        fields = [field.strip() for field in re.split(r"[,;\t]", line) if field.strip()]
+        try:
+            seconds = 0
+            for part in fields[0].replace("::", ":").split(":"):
+                seconds = seconds * 60 + int(part)
+            steps.append([seconds, float(fields[1])])
+        except (ValueError, IndexError):
+            continue  # header, blank or comment line
+    if not steps:
+        raise ValueError("no rows of the form mm:ss,watt found")
+    return sorted(steps)
+
+
+def load_profile(name: str, text: str):
+    save_log()  # a running profile is replaced
+    CONTROL["profile"] = {"name": name, "steps": parse_profile(text), "start": None}
+
+
+def start_profile():
+    """Start the loaded profile and, with it, the recording of the measured values."""
+    save_log()
+    CONTROL["profile"]["start"] = CONTROL["log_start"] = time.time() * 1000
+
+
+def stop_profile():
+    if CONTROL["profile"]:
+        CONTROL["profile"]["start"] = None
+    save_log()
+
+
+def save_log():
+    """End the recording and write its samples to logs/log-<yy-mm-dd-hh-mm-ss>.csv, named after the start.
+
+    Samples only arrive while the ergometer is connected, so the file holds exactly
+    what was measured between "Start" and "Stop" (or the end of the profile).
+    """
+    start, CONTROL["log_start"] = CONTROL["log_start"], None
+    rows = [sample for sample in SAMPLES if start and sample["t"] >= start]
+    if not rows:
+        return
+    labels = [label for _, label, *_ in BIKE_FIELDS if any(label in row for row in rows)]
+    LOG_DIR.mkdir(exist_ok=True)
+    path = LOG_DIR / f"log-{datetime.fromtimestamp(start / 1000):%y-%m-%d-%H-%M-%S}.csv"
+    with path.open("w", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(["time", "seconds", "target", *labels])
+        for row in rows:
+            writer.writerow([datetime.fromtimestamp(row["t"] / 1000).isoformat(timespec="milliseconds"),
+                             f"{(row['t'] - start) / 1000:.1f}", f"{row['target'] or 0:g}",
+                             *(f"{row[label]:g}" if label in row else "" for label in labels)])
+    print(f"{stamp()}  log saved: {path} ({len(rows)} samples)")
+
+
+def profile_files() -> list[str]:
+    """The profiles offered in the panel: vorgabe-<name>.csv next to this program."""
+    return sorted(path.name for path in PANEL_HTML.parent.glob("vorgabe-*.csv"))
+
+
+def follow_profile():
+    """Take the target power from the running profile, if there is one."""
+    profile = CONTROL["profile"]
+    if not profile or not profile["start"]:
+        return
+    steps = profile["steps"]
+    elapsed = time.time() - profile["start"] / 1000
+    CONTROL["target_power"] = next((watts for seconds, watts in reversed(steps) if seconds <= elapsed), 0)
+    if elapsed >= steps[-1][0] and steps[-1][1] == 0:
+        stop_profile()
+        print(f"{stamp()}  profile {profile['name']} finished")
 
 
 def set_status(text: str):
@@ -135,14 +222,20 @@ async def set_resistance(level: float):
 
 
 async def power_control():
-    """PID loop: steer the resistance level so the measured power follows the target."""
+    """PID loop: steer the resistance level so the measured power follows the target.
+
+    The AX 4000 acknowledges FTMS "Set Target Power" (opcode 0x05) but then ignores
+    it and keeps its resistance level, so the control has to happen here.
+    """
     integral = None
     last_error = 0.0
+    last_target = 0
     last_time = time.monotonic()
     while True:
         await asyncio.sleep(1)
         now = time.monotonic()
         dt, last_time = now - last_time, now
+        follow_profile()
         target = CONTROL["target_power"]
         recent = [s for s in SAMPLES[-3:] if "power" in s and "resistance" in s]
         if not target or not recent or time.time() * 1000 - recent[-1]["t"] > 3000:
@@ -158,6 +251,11 @@ async def power_control():
         if integral is None:
             # Start from the current level so switching the controller on causes no jump.
             integral, last_error = float(level), error
+        elif target != last_target:
+            # Feedforward: on a new target, jump by the expected number of levels
+            # instead of waiting for the integral to get there (matters for intervals).
+            integral += (target - last_target) / WATTS_PER_LEVEL
+        last_target = target
         low, high, _ = CONTROL["range"]
         integral = min(max(integral + PID_KI * error * dt, low), high)  # clamped: anti-windup
         output = min(max(integral + PID_KP * error + PID_KD * (error - last_error) / dt, low), high)
@@ -178,7 +276,10 @@ class PanelHandler(BaseHTTPRequestHandler):
             since = int(parse_qs(url.query).get("since", ["0"])[0])
             payload = {"status": STATUS["text"], "next": len(SAMPLES), "samples": SAMPLES[since:],
                        "connected": bool(CONTROL["range"]), "power_range": CONTROL["power_range"],
-                       "target_power": CONTROL["target_power"]}
+                       "target_power": CONTROL["target_power"], "profile": CONTROL["profile"],
+                       "profiles": profile_files(),
+                       # Lets an open page notice that panel.html was edited and reload itself.
+                       "panel_version": PANEL_HTML.stat().st_mtime}
             body, content_type = json.dumps(payload).encode(), "application/json"
         else:
             self.send_error(404)
@@ -186,14 +287,32 @@ class PanelHandler(BaseHTTPRequestHandler):
         self.reply(200, body, content_type)
 
     def do_POST(self):
-        if self.path != "/target":
-            self.send_error(404)
-            return
         try:
-            power = float(json.loads(self.rfile.read(int(self.headers["Content-Length"])))["power"])
-            CONTROL["target_power"] = min(max(power, 0), CONTROL["power_range"][1])
-            print(f"{stamp()}  target power: {CONTROL['target_power']:g} W")
-            self.reply(200, json.dumps({"power": CONTROL["target_power"]}).encode(), "application/json")
+            request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            profile = CONTROL["profile"]
+            if self.path == "/target":
+                # Setting the power by hand takes over from a running profile.
+                stop_profile()
+                CONTROL["target_power"] = min(max(float(request["power"]), 0), CONTROL["power_range"][1])
+                print(f"{stamp()}  target power: {CONTROL['target_power']:g} W")
+            elif self.path == "/profile" and request.get("name") in profile_files():
+                load_profile(request["name"], (PANEL_HTML.parent / request["name"]).read_text())
+                CONTROL["target_power"] = 0
+                print(f"{stamp()}  profile loaded: {request['name']}")
+            elif self.path == "/profile" and request.get("name") == "":
+                save_log()
+                CONTROL.update(profile=None, target_power=0)
+            elif self.path == "/profile" and profile and request.get("action") == "start":
+                start_profile()
+                print(f"{stamp()}  profile started: {profile['name']}")
+            elif self.path == "/profile" and profile and request.get("action") == "stop":
+                stop_profile()
+                CONTROL["target_power"] = 0
+                print(f"{stamp()}  profile stopped")
+            else:
+                raise ValueError("unknown request")
+            reply = {"power": CONTROL["target_power"], "profile": CONTROL["profile"]}
+            self.reply(200, json.dumps(reply).encode(), "application/json")
         except Exception as exc:
             self.reply(400, json.dumps({"error": str(exc)}).encode(), "application/json")
 
@@ -266,7 +385,12 @@ async def run(args):
         print_devices(await scan(args.timeout))
         return
 
+    if shutil.which("caffeinate"):
+        # macOS: keep the display awake (no screen saver, no sleep) for as long as this program runs.
+        subprocess.Popen(["caffeinate", "-d", "-i", "-w", str(os.getpid())])
     CONTROL["target_power"] = args.power
+    if args.profile:
+        load_profile(Path(args.profile).name, Path(args.profile).read_text())
     if args.panel:
         start_panel(args.port)
     device = await find_ergometer(args)
@@ -297,7 +421,8 @@ async def run(args):
                 try:
                     values = parser(bytes(data))
                     if char.uuid == INDOOR_BIKE_DATA:
-                        SAMPLES.append({"t": time.time() * 1000, **{k: v for k, (v, _) in values.items()}})
+                        SAMPLES.append({"t": time.time() * 1000, "target": CONTROL["target_power"] or None,
+                                        **{k: v for k, (v, _) in values.items()}})
                     print(f"{stamp()}  " + "  ".join(f"{k}: {format_value(*v)}" for k, v in values.items()))
                     return
                 except (struct.error, IndexError):
@@ -327,11 +452,14 @@ async def run(args):
             if POWER_RANGE in uuids:
                 low, high, step = struct.unpack("<hhH", await client.read_gatt_char(POWER_RANGE))
                 CONTROL["power_range"] = [0, high, max(step, 5)]
+            if args.profile:
+                start_profile()  # a profile from the command line starts on connect
             CONTROL["task"] = asyncio.create_task(power_control())
 
         print("\nReceiving data, start pedalling. Press Ctrl+C to stop.\n")
         await disconnected.wait()
         CONTROL["range"] = None
+        save_log()
         set_status("Ergometer disconnected")
 
 
@@ -343,12 +471,15 @@ def main():
     parser.add_argument("--panel", action="store_true", help="show a live Plotly panel in the browser")
     parser.add_argument("--port", type=int, default=8050, help="port for the panel (default: 8050)")
     parser.add_argument("--power", type=float, default=0, help="target power in W, held by a PID controller on the resistance")
+    parser.add_argument("--profile", help="CSV file with rows mm:ss,watt; the target power follows it once connected")
     parser.add_argument("--raw", action="store_true", help="also print raw bytes of all other notifications")
     parser.add_argument("--scan", action="store_true", help="only list nearby BLE devices")
     try:
         asyncio.run(run(parser.parse_args()))
     except KeyboardInterrupt:
         print("\nStopped.")
+    finally:
+        save_log()  # a recording that is still running is kept
 
 
 if __name__ == "__main__":
