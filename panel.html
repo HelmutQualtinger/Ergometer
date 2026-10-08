@@ -239,8 +239,14 @@
   }
   header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
   header { align-items: center; }
-  header select { font: inherit; font-size: 22px; line-height: 1; color: var(--text-primary); background: var(--surface-1);
+  header select, header button { font: inherit; font-size: 22px; line-height: 1; color: var(--text-primary); background: var(--surface-1);
     border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; cursor: pointer; }
+  /* The address of this panel for a phone, as a QR code. Black on white in every theme, or it won't scan. */
+  .companion { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+  .companion[hidden] { display: none; }
+  .companion .qr { flex: none; width: 150px; }
+  .companion .qr svg { display: block; width: 100%; border-radius: 4px; }
+  .companion a { color: inherit; font-weight: 400; overflow-wrap: anywhere; }
   h1 { font-size: 17px; font-weight: 700; margin: 0; }
   #status { color: var(--text-secondary); font-size: 13px; text-align: right; flex: 1; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 8px; margin-bottom: 8px; }
@@ -252,7 +258,9 @@
   .plot { height: 150px; margin-top: 2px; }
   .key { float: right; }
   .key i { display: inline-block; width: 16px; margin: 0 4px 3px 8px; border-top: 2px solid var(--series-1); }
-  .key i.target { border-top-color: var(--target); }
+  /* In the power chart the target is a bold white line and the measured power a black one on top of it. */
+  .key i.target { border-top: 4px solid #fff; margin-bottom: 2px; box-shadow: 0 0 0 1px var(--border); }
+  .key i.actual { border-top: 0; height: 6px; margin-bottom: 1px; background: linear-gradient(#fff 0 2px, #000 2px 4px, #fff 4px); box-shadow: 0 0 0 1px var(--border); }
   .key i.bands { border-top-color: var(--pulse-line); }
   .key i.second { border-top-color: var(--series-2); }
   .control button, .control select { font: inherit; color: var(--text-primary); background: var(--surface-1);
@@ -260,6 +268,13 @@
   .control button:disabled { opacity: 0.5; cursor: default; }
   .control { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
   .control input { flex: 1; min-width: 0; accent-color: var(--series-1); height: 20px; margin: 0; }
+  #profile-next { flex: 1; white-space: nowrap; }  /* countdown to the next change of power, at the right edge */
+  /* On a phone the countdown gets a line of its own, large enough to read from the saddle. */
+  @media (max-width: 640px) {
+    .control { flex-wrap: wrap; }
+    #profile-next { flex-basis: 100%; text-align: center; font-size: 30px; }
+    #profile-next:empty { display: none; }
+  }
   .control output { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 6ch; text-align: right; }
   .control small { color: var(--text-secondary); }
 </style>
@@ -268,72 +283,86 @@
 <header>
   <h1>Ergometer AX 4000</h1>
   <div id="status"></div>
+  <button id="sound" aria-label="Sound"></button>
+  <button id="phone" aria-label="Phone">📱</button>
   <select id="theme" aria-label="Theme"></select>
   <select id="language" aria-label="Language"></select>
 </header>
+<section class="card companion" id="companion" hidden>
+  <div class="qr"></div>
+  <div><div class="label" data-text="phone"></div><a></a></div>
+</section>
 <section class="tiles" id="tiles"></section>
 <section class="card control">
   <label class="label" for="target" data-text="target"></label>
-  <input type="range" id="target" min="0" max="400" step="5" value="0" disabled>
+  <input type="range" id="target" min="0" max="300" step="5" value="0" disabled>
   <output id="target-value" for="target"></output>
   <small id="target-note"></small>
 </section>
 <section class="card control">
   <label class="label" for="profile-select" data-text="profile"></label>
-  <select id="profile-select"><option value="" data-text="none"></option></select>
+  <select id="profile-select"><option value="" data-text="manual"></option></select>
   <button id="profile-run" disabled></button>
   <span class="label" id="profile-info"></span>
+  <output id="profile-next"></output>
 </section>
 <section class="charts" id="charts"></section>
 
 <script>
 // Every text of the panel in each language. `locale` sets the number format.
 const TEXTS = {
-  de: { locale: "de-DE", power: "Leistung", cadence: "Trittfrequenz", speed: "Geschwindigkeit", pulse: "Puls",
+  de: { end: "Ende", temperature: "Temperatur", phone: "Mit dem Handy scannen: Start, Stopp und Vorgabe direkt am Ergometer",
+        locale: "de-DE", power: "Leistung", cadence: "Trittfrequenz", speed: "Geschwindigkeit", pulse: "Puls",
         resistance: "Widerstand", distance: "Distanz", energy: "Energie", time: "Zeit", target: "Zielleistung",
-        off: "aus", profile: "Vorgabe", none: "keine", start: "Start", stop: "Stopp", actual: "Ist",
+        off: "aus", profile: "Vorgabe", manual: "manuell", start: "Start", stop: "Stopp", actual: "Ist",
         setpoint: "Vorgabe", setpointShort: "Soll", level: "Stufe", leftAxis: "linke Achse", rightAxis: "rechte Achse",
         and: "und", unreachable: "Programm nicht erreichbar", error: "Fehler", auto: "Auto", light: "Hell", dark: "Dunkel",
         scanning: "Suche Ergometer …", connecting: "Verbinde mit", connected: "Verbunden mit",
         notFound: "Ergometer nicht gefunden", disconnected: "Ergometer getrennt" },
-  it: { locale: "it-IT", power: "Potenza", cadence: "Cadenza", speed: "Velocità", pulse: "Battito",
+  it: { end: "Fine", temperature: "Temperatura", phone: "Scansiona con il telefono: avvio, arresto e profilo direttamente dall'ergometro",
+        locale: "it-IT", power: "Potenza", cadence: "Cadenza", speed: "Velocità", pulse: "Battito",
         resistance: "Resistenza", distance: "Distanza", energy: "Energia", time: "Tempo", target: "Potenza obiettivo",
-        off: "spento", profile: "Profilo", none: "nessuno", start: "Avvia", stop: "Ferma", actual: "Reale",
+        off: "spento", profile: "Profilo", manual: "manuale", start: "Avvia", stop: "Ferma", actual: "Reale",
         setpoint: "Obiettivo", setpointShort: "Obiettivo", level: "Livello", leftAxis: "asse sinistro", rightAxis: "asse destro",
         and: "e", unreachable: "Programma non raggiungibile", error: "Errore", auto: "Auto", light: "Chiaro", dark: "Scuro",
         scanning: "Ricerca ergometro …", connecting: "Connessione a", connected: "Connesso a",
         notFound: "Ergometro non trovato", disconnected: "Ergometro disconnesso" },
-  en: { locale: "en-GB", power: "Power", cadence: "Cadence", speed: "Speed", pulse: "Heart rate",
+  en: { end: "End", temperature: "Temperature", phone: "Scan with your phone: start, stop and profile right at the ergometer",
+        locale: "en-GB", power: "Power", cadence: "Cadence", speed: "Speed", pulse: "Heart rate",
         resistance: "Resistance", distance: "Distance", energy: "Energy", time: "Time", target: "Target power",
-        off: "off", profile: "Profile", none: "none", start: "Start", stop: "Stop", actual: "Actual",
+        off: "off", profile: "Profile", manual: "manual", start: "Start", stop: "Stop", actual: "Actual",
         setpoint: "Target", setpointShort: "Target", level: "Level", leftAxis: "left axis", rightAxis: "right axis",
         and: "and", unreachable: "Program not reachable", error: "Error", auto: "Auto", light: "Light", dark: "Dark",
         scanning: "Searching for ergometer …", connecting: "Connecting to", connected: "Connected to",
         notFound: "Ergometer not found", disconnected: "Ergometer disconnected" },
-  es: { locale: "es-ES", power: "Potencia", cadence: "Cadencia", speed: "Velocidad", pulse: "Pulso",
+  es: { end: "Fin", temperature: "Temperatura", phone: "Escanea con el móvil: inicio, parada y perfil desde el ergómetro",
+        locale: "es-ES", power: "Potencia", cadence: "Cadencia", speed: "Velocidad", pulse: "Pulso",
         resistance: "Resistencia", distance: "Distancia", energy: "Energía", time: "Tiempo", target: "Potencia objetivo",
-        off: "apagado", profile: "Perfil", none: "ninguno", start: "Iniciar", stop: "Parar", actual: "Real",
+        off: "apagado", profile: "Perfil", manual: "manual", start: "Iniciar", stop: "Parar", actual: "Real",
         setpoint: "Objetivo", setpointShort: "Objetivo", level: "Nivel", leftAxis: "eje izquierdo", rightAxis: "eje derecho",
         and: "y", unreachable: "Programa no disponible", error: "Error", auto: "Auto", light: "Claro", dark: "Oscuro",
         scanning: "Buscando ergómetro …", connecting: "Conectando con", connected: "Conectado a",
         notFound: "Ergómetro no encontrado", disconnected: "Ergómetro desconectado" },
-  fr: { locale: "fr-FR", power: "Puissance", cadence: "Cadence", speed: "Vitesse", pulse: "Pouls",
+  fr: { end: "Fin", temperature: "Température", phone: "Scanner avec le téléphone : démarrage, arrêt et profil depuis l'ergomètre",
+        locale: "fr-FR", power: "Puissance", cadence: "Cadence", speed: "Vitesse", pulse: "Pouls",
         resistance: "Résistance", distance: "Distance", energy: "Énergie", time: "Temps", target: "Puissance cible",
-        off: "arrêt", profile: "Profil", none: "aucun", start: "Démarrer", stop: "Arrêter", actual: "Réel",
+        off: "arrêt", profile: "Profil", manual: "manuel", start: "Démarrer", stop: "Arrêter", actual: "Réel",
         setpoint: "Cible", setpointShort: "Cible", level: "Niveau", leftAxis: "axe gauche", rightAxis: "axe droit",
         and: "et", unreachable: "Programme injoignable", error: "Erreur", auto: "Auto", light: "Clair", dark: "Sombre",
         scanning: "Recherche de l'ergomètre …", connecting: "Connexion à", connected: "Connecté à",
         notFound: "Ergomètre introuvable", disconnected: "Ergomètre déconnecté" },
-  cn: { locale: "zh-CN", power: "功率", cadence: "踏频", speed: "速度", pulse: "心率",
+  cn: { end: "结束", temperature: "室温", phone: "用手机扫描：在测功车上直接开始、停止和选择方案",
+        locale: "zh-CN", power: "功率", cadence: "踏频", speed: "速度", pulse: "心率",
         resistance: "阻力", distance: "距离", energy: "能量", time: "时间", target: "目标功率",
-        off: "关", profile: "方案", none: "无", start: "开始", stop: "停止", actual: "实际",
+        off: "关", profile: "方案", manual: "手动", start: "开始", stop: "停止", actual: "实际",
         setpoint: "目标", setpointShort: "目标", level: "档位", leftAxis: "左轴", rightAxis: "右轴",
         and: "和", unreachable: "无法连接程序", error: "错误", auto: "自动", light: "浅色", dark: "深色",
         scanning: "正在搜索测功车…", connecting: "正在连接", connected: "已连接",
         notFound: "未找到测功车", disconnected: "测功车已断开" },
-  jp: { locale: "ja-JP", power: "パワー", cadence: "ケイデンス", speed: "速度", pulse: "心拍数",
+  jp: { end: "終了", temperature: "室温", phone: "スマホでスキャン：エルゴメーターの横で開始・停止・プロファイル選択",
+        locale: "ja-JP", power: "パワー", cadence: "ケイデンス", speed: "速度", pulse: "心拍数",
         resistance: "負荷", distance: "距離", energy: "エネルギー", time: "時間", target: "目標パワー",
-        off: "オフ", profile: "プロファイル", none: "なし", start: "開始", stop: "停止", actual: "実測",
+        off: "オフ", profile: "プロファイル", manual: "手動", start: "開始", stop: "停止", actual: "実測",
         setpoint: "目標", setpointShort: "目標", level: "レベル", leftAxis: "左軸", rightAxis: "右軸",
         and: "と", unreachable: "プログラムに接続できません", error: "エラー", auto: "自動", light: "ライト", dark: "ダーク",
         scanning: "エルゴメーターを検索中…", connecting: "接続中:", connected: "接続済み:",
@@ -356,6 +385,25 @@ function chooser(id, key, current, options) {
 const FLAGS = { de: "🇩🇪", it: "🇮🇹", en: "🇬🇧", es: "🇪🇸", fr: "🇫🇷", cn: "🇨🇳", jp: "🇯🇵" };
 chooser("theme", "ergometer-theme", THEME, [["sub", "⚓"], ["nights", "🪔"], ["reactor", "☢️"], ["auto", "🌗"], ["light", "☀️"], ["dark", "🌙"]]);
 chooser("language", "ergometer-language", LANGUAGE, Object.keys(TEXTS).map((code) => [code, FLAGS[code]]));
+
+// The phone button shows or hides the QR code with this panel's address in the local network.
+// It starts out visible on the computer that runs the program and hidden everywhere else.
+const companion = document.getElementById("companion");
+const onThisComputer = ["127.0.0.1", "localhost", "[::1]"].includes(location.hostname);
+companion.hidden = stored("ergometer-companion", onThisComputer ? "shown" : "hidden") !== "shown";
+document.getElementById("phone").addEventListener("click", () => {
+  companion.hidden = !companion.hidden;
+  try { localStorage.setItem("ergometer-companion", companion.hidden ? "hidden" : "shown"); } catch {}
+});
+fetch("/qr").then((reply) => reply.json()).then(({ url, modules }) => {
+  const quiet = 4, size = modules.length + 2 * quiet;
+  let path = "";
+  modules.forEach((row, y) => [...row].forEach((module, x) => { if (module === "1") path += `M${x + quiet},${y + quiet}h1v1h-1z`; }));
+  companion.querySelector(".qr").innerHTML =
+    `<svg viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges"><rect width="${size}" height="${size}" fill="#fff"/><path d="${path}" fill="#000"/></svg>`;
+  const link = companion.querySelector("a");
+  link.textContent = link.href = url;
+}).catch(console.error);
 
 // The program reports its state in English; show it in the chosen language.
 function translateStatus(text) {
@@ -381,10 +429,11 @@ const TILES = [
   ["distance", T.distance, "km", (v) => fmt(2)(v / 1000)],
   ["energy", T.energy, "kcal", fmt(0)],
   ["elapsed", T.time, "min", clock],
+  ["temperature", T.temperature, "°C", fmt(1)],  // not from the ergometer: the room, see poll()
 ];
 // One full-width row per chart: [sample key, label, unit, legend, second sample key drawn in the same chart]
 const CHARTS = [
-  ["power", T.power, "W", `<i class="bands"></i>${T.actual} <i class="target"></i>${T.setpoint}`, "target"],
+  ["power", T.power, "W", `<i class="actual"></i>${T.actual} <i class="target"></i>${T.setpoint}`, "target"],
   ["cadence", `${T.cadence} (rpm) ${T.and} ${T.resistance}`, T.level,
    `<i></i>${T.cadence}, ${T.leftAxis} <i class="second"></i>${T.resistance}, ${T.rightAxis}`, "resistance"],
   ["heart rate", T.pulse, "bpm"],
@@ -472,8 +521,9 @@ function layout(key) {
   return result;
 }
 
-// The pulse and power curves run over coloured bands, so they are drawn in the text colour instead of blue.
-const lineColor = (key) => css(BANDS[key] ? "--pulse-line" : "--series-1");
+// The pulse curve runs over coloured bands, so it is drawn in the text colour instead of blue.
+// The power chart has the target as a bold white line; the measured power is black so it shows on it.
+const lineColor = (key) => key === "power" ? "#000" : css(BANDS[key] ? "--pulse-line" : "--series-1");
 
 for (const { key, el, unit } of plots) {
   const traces = [{
@@ -491,12 +541,12 @@ for (const { key, el, unit } of plots) {
   if (key === "power") {
     traces.push({
       x: [], y: [], mode: "lines", connectgaps: false,
-      line: { width: 2, shape: "hv", color: css("--target") },
+      line: { width: 5, shape: "hv", color: "#fff" }, zorder: -1,  // under the measured power
       hovertemplate: `${T.setpoint} %{y} W<extra></extra>`,
     }, {
       // The whole profile from the file, including what is still to come.
       x: [], y: [], mode: "lines", hoverinfo: "skip",
-      line: { width: 1.5, shape: "hv", dash: "dot", color: css("--target") },
+      line: { width: 3, shape: "hv", dash: "dot", color: "#fff" }, zorder: -2,
     });
   }
   Plotly.newPlot(el, traces, layout(key), { displayModeBar: false, responsive: true });
@@ -509,20 +559,24 @@ const slider = document.getElementById("target");
 const sliderValue = document.getElementById("target-value");
 const sliderNote = document.getElementById("target-note");
 let sliderTouched = 0;  // while the user is adjusting, don't snap back to the server's target
-sliderValue.textContent = T.off;
+// The slider acts at once while a run is going or the controller is on. Otherwise it only
+// holds the power for the next manual run, and nothing happens before "Start".
+let live = false;
+const showSlider = () => { sliderValue.textContent = +slider.value > 0 ? `${slider.value} W` : T.off; };  // 0 is "off"
+showSlider();
 
-// 0 switches the power control off.
+// The target power the program is working with, in the label of the power tile.
 function showTarget(watts) {
-  sliderValue.textContent = watts > 0 ? `${watts} W` : T.off;
   document.querySelector('[data-label="power"]').textContent = watts > 0 ? `${T.power} · ${T.setpointShort} ${watts} W` : T.power;
 }
 
 slider.addEventListener("input", () => {
   sliderTouched = Date.now();
-  sliderValue.textContent = +slider.value > 0 ? `${slider.value} W` : T.off;
+  showSlider();
 });
 async function sendTarget() {
   sliderTouched = Date.now();
+  if (!live) return;
   try {
     const body = JSON.stringify({ power: +slider.value });
     const reply = await (await fetch("/target", { method: "POST", body })).json();
@@ -538,7 +592,66 @@ const profileSelect = document.getElementById("profile-select");
 const profileRun = document.getElementById("profile-run");
 const profileInfo = document.getElementById("profile-info");
 const powerPlot = document.querySelector('[data-chart="power"]');
-let profileShown = "", profileTouched = 0;
+const profileNext = document.getElementById("profile-next");
+let profileShown = "", profileTouched = 0, profileNow = null;
+
+// Beeps for the countdown. A browser only plays sound after the page has been touched or
+// clicked once, so the bell button doubles as the way to switch it on.
+const soundButton = document.getElementById("sound");
+let soundOn = stored("ergometer-sound", "on") === "on", audio = null;
+function wakeAudio() {
+  try { (audio ??= new AudioContext()).resume(); } catch {}
+}
+function showSound() { soundButton.textContent = soundOn ? "🔔" : "🔕"; }
+soundButton.addEventListener("click", () => {
+  soundOn = !soundOn;
+  try { localStorage.setItem("ergometer-sound", soundOn ? "on" : "off"); } catch {}
+  showSound();
+  if (soundOn) beep(880, 0.08);
+});
+showSound();
+for (const gesture of ["click", "touchend", "keydown"]) document.addEventListener(gesture, wakeAudio);
+
+function beep(frequency, seconds) {
+  if (!soundOn) return;
+  try {
+    wakeAudio();
+    const oscillator = audio.createOscillator(), gain = audio.createGain(), now = audio.currentTime;
+    oscillator.frequency.value = frequency;
+    oscillator.connect(gain).connect(audio.destination);
+    gain.gain.setValueAtTime(0.0001, now);  // fade in and out, or it clicks
+    gain.gain.exponentialRampToValueAtTime(0.3, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + seconds);
+    oscillator.start(now);
+    oscillator.stop(now + seconds + 0.02);
+  } catch {}
+}
+const BEEP_SECONDS = 10;  // the last seconds before the power changes are counted down with beeps
+let beeped = "", changeAt = null;
+
+// While a profile from a file runs: the time until the power changes, and what it changes to.
+function showCountdown() {
+  const profile = profileNow;
+  if (!profile?.start || !profile.steps.length) {
+    changeAt = null;
+    return void (profileNext.textContent = "");
+  }
+  const elapsed = (Date.now() - profile.start) / 1000;
+  // The change that was being counted down has arrived: one long, higher beep.
+  if (changeAt !== null && elapsed >= changeAt) beep(1320, 0.5);
+  const current = profile.steps.findLast(([seconds]) => seconds <= elapsed)?.[1] ?? 0;
+  const next = profile.steps.find(([seconds, watts]) => seconds > elapsed && watts !== current);
+  changeAt = next ? next[0] : null;
+  if (!next) return void (profileNext.textContent = "");
+  const [seconds, watts] = next, left = Math.ceil(seconds - elapsed);
+  profileNext.textContent = `${clock(left)} ${watts > current ? "↗" : "↘"} ${watts > 0 ? `${watts} W` : T.end}`;
+  // One short beep per second in the last seconds, each second only once.
+  if (left <= BEEP_SECONDS && beeped !== `${seconds}:${left}`) {
+    beeped = `${seconds}:${left}`;
+    beep(880, 0.08);
+  }
+}
+setInterval(showCountdown, 250);  // the program is only asked once a second, which would make the seconds stutter
 
 async function postProfile(request) {
   try {
@@ -553,10 +666,11 @@ const profileLabel = (name) => name.replace(/^vorgabe-|\.csv$/g, "");
 function showProfileList(names) {
   const listed = [...profileSelect.options].slice(1).map((option) => option.value);
   if (names.join("|") === listed.join("|")) return;
-  profileSelect.length = 1;  // keep "none"
+  profileSelect.length = 1;  // keep "manual"
   for (const name of names) profileSelect.add(new Option(profileLabel(name), name));
 }
-profileRun.addEventListener("click", () => postProfile({ action: profileRun.dataset.action }));
+// Without a profile ("manual") Start begins a run at the power the slider shows.
+profileRun.addEventListener("click", () => postProfile({ action: profileRun.dataset.action, power: +slider.value }));
 
 // The curves only run between "Start" and "Stop". Before the start the charts stand at 00:00;
 // after the stop they stay as they are until another profile is chosen or started.
@@ -564,7 +678,7 @@ let runStart = null, runName = "";
 function syncRun(profile) {
   const start = profile?.start ?? null;
   const fresh = start && start !== runStart;
-  if (fresh || (!start && runStart && profile?.name !== runName)) {
+  if (fresh || (!start && runStart && (profile?.name ?? "") !== runName)) {  // a manual run has no name
     runStart = fresh ? start : null;
     runName = fresh ? profile.name : "";
     for (const { el, second } of plots) Plotly.restyle(el, { x: [[]], y: [[]] }, second ? [0, 1] : [0]);
@@ -575,13 +689,16 @@ function syncRun(profile) {
 
 function showProfile(profile) {
   syncRun(profile);
-  profileRun.disabled = !profile;
+  profileNow = profile;
+  showCountdown();
+  profileRun.disabled = !profile && slider.disabled;  // a manual run needs the ergometer
   profileRun.dataset.action = profile?.start ? "stop" : "start";
   profileRun.textContent = profile?.start ? T.stop : T.start;
   if (Date.now() - profileTouched > 4000) profileSelect.value = profile?.name ?? "";
-  const total = profile ? profile.steps[profile.steps.length - 1][0] : 0;
-  const elapsed = profile?.start ? Math.min((Date.now() - profile.start) / 1000, total) : 0;
-  profileInfo.textContent = profile ? `${profile.start ? clock(elapsed) + " / " : ""}${clock(total)} min` : "";
+  // A manual run has no steps and no end: it only shows how long it has been going.
+  const total = profile?.steps.length ? profile.steps[profile.steps.length - 1][0] : 0;
+  const elapsed = profile?.start ? Math.min((Date.now() - profile.start) / 1000, total || Infinity) : 0;
+  profileInfo.textContent = !profile ? "" : total ? `${profile.start ? clock(elapsed) + " / " : ""}${clock(total)} min` : `${clock(elapsed)} min`;
 
   // A chosen profile is previewed from 00:00 until "Start" pins it. Once pinned it is only
   // redrawn when the file or start changes, and it stays in place after the stop.
@@ -604,17 +721,23 @@ async function poll() {
     panelVersion = data.panel_version;
     next = data.next;
     status.textContent = translateStatus(data.status);
+    // The room temperature comes with every answer, pedalling or not. A program without a sensor sends none.
+    const room = document.querySelector('[data-tile="temperature"]');
+    room.closest(".card").hidden = data.temperature === undefined;
+    room.textContent = data.temperature == null ? "–" : fmt(1)(data.temperature);
     slider.disabled = !data.connected;
     const now = Date.now();
     showProfileList(data.profiles);
     showProfile(data.profile);
     [slider.min, slider.max, slider.step] = data.power_range;
-    if (Date.now() - sliderTouched > 4000 && +slider.value !== data.target_power) {
+    live = !!data.profile?.start || data.target_power > 0;
+    showTarget(data.target_power);
+    if (live && Date.now() - sliderTouched > 4000 && +slider.value !== data.target_power) {
       slider.value = data.target_power;
-      showTarget(data.target_power);
+      showSlider();
     }
     // The curves start at the left edge; the window only slides once they would run out on the right.
-    const ahead = data.profile ? LOOKAHEAD_SECONDS : 0;
+    const ahead = data.profile?.steps.length ? LOOKAHEAD_SECONDS : 0;
     const left = Math.max(firstTime, now + (ahead - WINDOW_SECONDS) * 1000);
     const range = [rel(left), rel(left + WINDOW_SECONDS * 1000)];
     // Past the first hour the labels need the hour as well.

@@ -1,2 +1,7 @@
 __pycache__/
 .DS_Store
+logs/log-*csv
+logs/stufentest-*.html
+logs/stufentest-*.pdf
+logs/lauf-*.html
+.env
