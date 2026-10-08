@@ -390,7 +390,7 @@ def save_log():
     rows = [sample for sample in SAMPLES if start and sample["t"] >= start]
     if not rows:
         return
-    labels = [label for _, label, *_ in BIKE_FIELDS if any(label in row for row in rows)]
+    labels = [label for label in [label for _, label, *_ in BIKE_FIELDS] + ["room temperature"] if any(label in row for row in rows)]
     LOG_DIR.mkdir(exist_ok=True)
     path = LOG_DIR / f"log-{datetime.fromtimestamp(start / 1000):%y-%m-%d-%H-%M-%S}.csv"
     with path.open("w", newline="") as file:
@@ -746,8 +746,11 @@ async def run(args):
                 try:
                     values = parser(bytes(data))
                     if char.uuid == INDOOR_BIKE_DATA:
-                        SAMPLES.append({"t": time.time() * 1000, "target": CONTROL["target_power"] or None,
-                                        **{k: v for k, (v, _) in values.items()}})
+                        sample = {"t": time.time() * 1000, "target": CONTROL["target_power"] or None,
+                                  **{k: v for k, (v, _) in values.items()}}
+                        if time.time() - ROOM["t"] < 120:
+                            sample["room temperature"] = ROOM["temperature"]  # goes into the log with the ride
+                        SAMPLES.append(sample)
                     print(f"{stamp()}  " + "  ".join(f"{k}: {format_value(*v)}" for k, v in values.items()))
                     return
                 except (struct.error, IndexError):

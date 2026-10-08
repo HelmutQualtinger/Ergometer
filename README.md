@@ -8,9 +8,13 @@ Verbindet sich per Bluetooth LE mit einem Christopeit AX 4000 Ergometer, zeigt d
 - Leistungsvorgaben aus Dateien (Intervalle, Stufentest) und Aufzeichnung jeder Fahrt als CSV
 - Handy als Fernbedienung: QR-Code scannen, dann Vorgabe, Start und Stopp am Ergometer bedienen
 
-![Cockpit während eines Sprint-Intervalltrainings](screenshot.png)
+![Cockpit am Rechner mit QR-Code für das Handy](screenshot.png)
 
-*Das Cockpit während der Vorgabe `sprint-30-60`, hier mit simulierten Messwerten.*
+*Das Cockpit am Rechner während der Vorgabe `stufen-4x`, oben der QR-Code für das Handy. Die Messwerte in den Bildern sind simuliert.*
+
+![Cockpit auf dem Handy](screenshot-handy.png)
+
+*Dasselbe Cockpit auf dem Handy: Vorgabe wählen, Start und Stopp, darunter groß der Countdown bis zum nächsten Leistungswechsel.*
 
 ## Installation
 
@@ -136,9 +140,10 @@ zeit,watt
 25:00,0
 ```
 
-Mitgeliefert sind sechs Profile:
+Mitgeliefert sind sieben Profile:
 
 - `vorgabe-hit.csv` (25 Minuten): 21 Zyklen aus 15 Sekunden bei 200 W und 45 Sekunden bei 100 W, davor und danach 2 Minuten bei 80 W
+- `vorgabe-hiit-20.csv` (20 Minuten): 12 Runden aus 30 Sekunden bei 230 W und 30 Sekunden bei 80 W, davor 4 Minuten bei 100 W, danach 4 Minuten bei 80 W
 - `vorgabe-intervall-1-3.csv` (24 Minuten): 5 Zyklen aus 1 Minute bei 200 W und 3 Minuten bei 100 W, davor und danach 2 Minuten bei 80 W
 - `vorgabe-sprint-30-60.csv` (19 Minuten): 10 Zyklen aus 30 Sekunden bei 250 W und 60 Sekunden bei 90 W, davor 2 Minuten bei 100 W, danach 2 Minuten bei 80 W
 - `vorgabe-persoenlich-30.csv` (30 Minuten): 3 Blöcke von 5 Minuten bei 200 W mit 2 Minuten bei 120 W dazwischen, 6 Minuten Einfahren in drei Stufen, 5 Minuten Ausfahren; aus einem Stufentest abgeleitet (85 % von 236 W)
@@ -147,7 +152,7 @@ Mitgeliefert sind sechs Profile:
 
 ## Aufzeichnung
 
-Zwischen „Start" und „Stopp" werden alle Messwerte des Ergometers aufgezeichnet. Auch die Kurven im Cockpit laufen nur in dieser Zeit: Vor dem Start stehen die Diagramme bei 00:00 und nur die Kacheln zeigen die aktuellen Werte, nach dem Stopp bleiben die Kurven stehen. Beim Stopp – auch wenn das Profil von selbst endet, der Schieber übernimmt, die Verbindung abbricht oder das Programm beendet wird – entsteht daraus `logs/log-<jj-mm-tt-hh-mm-ss>.csv`, benannt nach dem Startzeitpunkt. Die Datei enthält je Messung eine Zeile mit Uhrzeit, Sekunden seit dem Start, Zielleistung und den gemeldeten Werten (Geschwindigkeit, Trittfrequenz, Widerstand, Leistung, Puls ...).
+Zwischen „Start" und „Stopp" werden alle Messwerte des Ergometers aufgezeichnet. Auch die Kurven im Cockpit laufen nur in dieser Zeit: Vor dem Start stehen die Diagramme bei 00:00 und nur die Kacheln zeigen die aktuellen Werte, nach dem Stopp bleiben die Kurven stehen. Beim Stopp – auch wenn das Profil von selbst endet, der Schieber übernimmt, die Verbindung abbricht oder das Programm beendet wird – entsteht daraus `logs/log-<jj-mm-tt-hh-mm-ss>.csv`, benannt nach dem Startzeitpunkt. Die Datei enthält je Messung eine Zeile mit Uhrzeit, Sekunden seit dem Start, Zielleistung und den gemeldeten Werten (Geschwindigkeit, Trittfrequenz, Widerstand, Leistung, Puls ...) sowie der Raumtemperatur, wenn der Sensor sie liefert.
 
 ## Stufentest auswerten
 
@@ -163,9 +168,17 @@ Das wertet die jüngste Aufzeichnung in `logs/` als Stufentest aus (oder eine al
 
 `--height` (cm) legt die BMI-Gruppe der deutschen Vergleichsdaten fest. `--betablocker` schaltet die Beurteilung des Pulses ab. `--pdf` schreibt zusätzlich ein kompaktes, zweispaltiges PDF im Hochformat (braucht Google Chrome). Die Vergleichsdaten gelten nur für Männer. In Claude Code erledigt der Skill `stufentest` dasselbe.
 
-## Lauf ansehen
+## Lauf ansehen und ablegen
 
-`python3 lauf.py logs/log-A.csv logs/log-B.csv` zeigt eine oder mehrere Aufzeichnungen als eine Fahrt: Leistung und Puls über die gefahrene Zeit, die Lücken zwischen den Aufzeichnungen, Summen je Aufzeichnung und Mittelwerte je Vorgabestufe. Die Seite entsteht neben der ersten Datei als `lauf-<jj-mm-tt-hh-mm-ss>.html`.
+```
+python3 lauf.py                                   # jüngste Aufzeichnung
+python3 lauf.py logs/log-A.csv logs/log-B.csv     # mehrere Aufzeichnungen als eine Fahrt
+python3 lauf.py --training --note "HIIT 12x(30:30)" --rr 126/83/87
+```
+
+Das schreibt neben die erste Datei `lauf-<jj-mm-tt-hh-mm-ss>.html`: Kennzahlen, Beobachtungen (z. B. Abschnitte, die über die Vorgabe schossen), Leistung, Puls und Trittfrequenz im Verlauf, die mittlere Leistung jedes Abschnitts gegen seine Vorgabe und Tabellen dazu. Lücken zwischen mehreren Aufzeichnungen sind markiert.
+
+Mit `--training` wird die Fahrt zusätzlich in `~/training/training_log.csv` eingetragen, samt Distanz, Trittfrequenz, Spitzenleistung, Höchstgeschwindigkeit und Temperatur – also den Spalten, die sonst aus einer Kinomap-Zusammenfassung kommen. Eine Fahrt, die schon im Log steht, wird nicht doppelt eingetragen. Die Raumtemperatur steht in neueren Aufzeichnungen selbst; für ältere gibt es `--temperature`. In Claude Code erledigt der Skill `lauf` dasselbe.
 
 ## Zielleistung und PID-Regler
 

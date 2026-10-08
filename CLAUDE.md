@@ -61,6 +61,15 @@ Every path that ends a run must go through `stop_profile()` or `save_log()`: the
 
 **Panel.** Tiles and charts are generated from the `TILES` and `CHARTS` tables. Colours come from CSS variables that are read when the charts are built, so a theme change reloads the page. There are several themes (`data-theme`, default `sub`) and languages (`TEXTS`); both can be forced with `/?theme=…&language=…`. `PULSE_BANDS` defines the heart-rate colour zones, and `POWER_BANDS` reuses the same colours spread evenly over `POWER_BAND_RANGE`; `bandColor()` also colours the pulse and power tiles.
 
+## Evaluating rides
+
+Two stand-alone scripts read `logs/log-*.csv` and write a Plotly page next to the log; each has a project skill in `.claude/skills/` that says when and how to run it.
+
+- `stufentest.py` rates a step test against reference data for men (FRIEND, SHIP) and can print a PDF.
+- `lauf.py` reports on any ride, joins several logs into one, and with `--training` files the ride in `~/training/training_log.csv` through that project's `add_training.py`, then fills the columns a Kinomap summary would have filled.
+
+Both pages embed their data; the generated files are personal and git-ignored.
+
 ## Conventions
 
 - New profiles or user-visible features get a line in `README.md` (German).
