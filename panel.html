@@ -239,6 +239,7 @@
   }
   header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
   header { align-items: center; }
+  header select, header button { flex: none; }
   header select, header button { font: inherit; font-size: 22px; line-height: 1; color: var(--text-primary); background: var(--surface-1);
     border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; cursor: pointer; }
   /* The address of this panel for a phone, as a QR code. Black on white in every theme, or it won't scan. */
@@ -248,7 +249,7 @@
   .companion .qr svg { display: block; width: 100%; border-radius: 4px; }
   .companion a { color: inherit; font-weight: 400; overflow-wrap: anywhere; }
   h1 { font-size: 17px; font-weight: 700; margin: 0; }
-  #status { color: var(--text-secondary); font-size: 13px; text-align: right; flex: 1; }
+  #status { color: var(--text-secondary); font-size: 13px; text-align: right; flex: 1; min-width: 0; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 8px; margin-bottom: 8px; }
   .charts { display: grid; grid-template-columns: 1fr; gap: 8px; }
   .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; min-width: 0; }
@@ -257,6 +258,8 @@
   .unit { color: var(--text-secondary); font-size: 13px; font-weight: 700; margin-left: 3px; }
   .plot { height: 150px; margin-top: 2px; }
   .key { float: right; }
+  .key.inline { float: none; }
+  .key.inline i { margin-left: 0; }
   .key i { display: inline-block; width: 16px; margin: 0 4px 3px 8px; border-top: 2px solid var(--series-1); }
   /* In the power chart the target is a bold white line and the measured power a black one on top of it. */
   .key i.target { border-top: 4px solid #fff; margin-bottom: 2px; box-shadow: 0 0 0 1px var(--border); }
@@ -271,9 +274,16 @@
   #profile-next { flex: 1; white-space: nowrap; }  /* countdown to the next change of power, at the right edge */
   /* On a phone the countdown gets a line of its own, large enough to read from the saddle. */
   @media (max-width: 640px) {
+    /* The title gets the first line to itself, so the menus stay on the screen whatever a theme adds to it. */
+    header { flex-wrap: wrap; row-gap: 4px; }
+    h1 { flex-basis: 100%; }
+    #status { text-align: left; }
     .control { flex-wrap: wrap; }
     #profile-next { flex-basis: 100%; text-align: center; font-size: 30px; }
     #profile-next:empty { display: none; }
+    .charts .card { padding: 7px 3px 3px; }
+    .charts .label { padding: 0 7px; white-space: normal; }
+    [data-theme="reactor"] .charts .label { padding: 0 16px; }
   }
   .control output { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 6ch; text-align: right; }
   .control small { color: var(--text-secondary); }
@@ -315,56 +325,56 @@ const TEXTS = {
         locale: "de-DE", power: "Leistung", cadence: "Trittfrequenz", speed: "Geschwindigkeit", pulse: "Puls",
         resistance: "Widerstand", distance: "Distanz", energy: "Energie", time: "Zeit", target: "Zielleistung",
         off: "aus", profile: "Vorgabe", manual: "manuell", start: "Start", stop: "Stopp", actual: "Ist",
-        setpoint: "Vorgabe", setpointShort: "Soll", level: "Stufe", leftAxis: "linke Achse", rightAxis: "rechte Achse",
-        and: "und", unreachable: "Programm nicht erreichbar", error: "Fehler", auto: "Auto", light: "Hell", dark: "Dunkel",
+        setpoint: "Vorgabe", setpointShort: "Soll", level: "Stufe",
+        unreachable: "Programm nicht erreichbar", error: "Fehler", auto: "Auto", light: "Hell", dark: "Dunkel",
         scanning: "Suche Ergometer …", connecting: "Verbinde mit", connected: "Verbunden mit",
         notFound: "Ergometer nicht gefunden", disconnected: "Ergometer getrennt" },
   it: { end: "Fine", temperature: "Temperatura", phone: "Scansiona con il telefono: avvio, arresto e profilo direttamente dall'ergometro",
         locale: "it-IT", power: "Potenza", cadence: "Cadenza", speed: "Velocità", pulse: "Battito",
         resistance: "Resistenza", distance: "Distanza", energy: "Energia", time: "Tempo", target: "Potenza obiettivo",
         off: "spento", profile: "Profilo", manual: "manuale", start: "Avvia", stop: "Ferma", actual: "Reale",
-        setpoint: "Obiettivo", setpointShort: "Obiettivo", level: "Livello", leftAxis: "asse sinistro", rightAxis: "asse destro",
-        and: "e", unreachable: "Programma non raggiungibile", error: "Errore", auto: "Auto", light: "Chiaro", dark: "Scuro",
+        setpoint: "Obiettivo", setpointShort: "Obiettivo", level: "Livello",
+        unreachable: "Programma non raggiungibile", error: "Errore", auto: "Auto", light: "Chiaro", dark: "Scuro",
         scanning: "Ricerca ergometro …", connecting: "Connessione a", connected: "Connesso a",
         notFound: "Ergometro non trovato", disconnected: "Ergometro disconnesso" },
   en: { end: "End", temperature: "Temperature", phone: "Scan with your phone: start, stop and profile right at the ergometer",
         locale: "en-GB", power: "Power", cadence: "Cadence", speed: "Speed", pulse: "Heart rate",
         resistance: "Resistance", distance: "Distance", energy: "Energy", time: "Time", target: "Target power",
         off: "off", profile: "Profile", manual: "manual", start: "Start", stop: "Stop", actual: "Actual",
-        setpoint: "Target", setpointShort: "Target", level: "Level", leftAxis: "left axis", rightAxis: "right axis",
-        and: "and", unreachable: "Program not reachable", error: "Error", auto: "Auto", light: "Light", dark: "Dark",
+        setpoint: "Target", setpointShort: "Target", level: "Level",
+        unreachable: "Program not reachable", error: "Error", auto: "Auto", light: "Light", dark: "Dark",
         scanning: "Searching for ergometer …", connecting: "Connecting to", connected: "Connected to",
         notFound: "Ergometer not found", disconnected: "Ergometer disconnected" },
   es: { end: "Fin", temperature: "Temperatura", phone: "Escanea con el móvil: inicio, parada y perfil desde el ergómetro",
         locale: "es-ES", power: "Potencia", cadence: "Cadencia", speed: "Velocidad", pulse: "Pulso",
         resistance: "Resistencia", distance: "Distancia", energy: "Energía", time: "Tiempo", target: "Potencia objetivo",
         off: "apagado", profile: "Perfil", manual: "manual", start: "Iniciar", stop: "Parar", actual: "Real",
-        setpoint: "Objetivo", setpointShort: "Objetivo", level: "Nivel", leftAxis: "eje izquierdo", rightAxis: "eje derecho",
-        and: "y", unreachable: "Programa no disponible", error: "Error", auto: "Auto", light: "Claro", dark: "Oscuro",
+        setpoint: "Objetivo", setpointShort: "Objetivo", level: "Nivel",
+        unreachable: "Programa no disponible", error: "Error", auto: "Auto", light: "Claro", dark: "Oscuro",
         scanning: "Buscando ergómetro …", connecting: "Conectando con", connected: "Conectado a",
         notFound: "Ergómetro no encontrado", disconnected: "Ergómetro desconectado" },
   fr: { end: "Fin", temperature: "Température", phone: "Scanner avec le téléphone : démarrage, arrêt et profil depuis l'ergomètre",
         locale: "fr-FR", power: "Puissance", cadence: "Cadence", speed: "Vitesse", pulse: "Pouls",
         resistance: "Résistance", distance: "Distance", energy: "Énergie", time: "Temps", target: "Puissance cible",
         off: "arrêt", profile: "Profil", manual: "manuel", start: "Démarrer", stop: "Arrêter", actual: "Réel",
-        setpoint: "Cible", setpointShort: "Cible", level: "Niveau", leftAxis: "axe gauche", rightAxis: "axe droit",
-        and: "et", unreachable: "Programme injoignable", error: "Erreur", auto: "Auto", light: "Clair", dark: "Sombre",
+        setpoint: "Cible", setpointShort: "Cible", level: "Niveau",
+        unreachable: "Programme injoignable", error: "Erreur", auto: "Auto", light: "Clair", dark: "Sombre",
         scanning: "Recherche de l'ergomètre …", connecting: "Connexion à", connected: "Connecté à",
         notFound: "Ergomètre introuvable", disconnected: "Ergomètre déconnecté" },
   cn: { end: "结束", temperature: "室温", phone: "用手机扫描：在测功车上直接开始、停止和选择方案",
         locale: "zh-CN", power: "功率", cadence: "踏频", speed: "速度", pulse: "心率",
         resistance: "阻力", distance: "距离", energy: "能量", time: "时间", target: "目标功率",
         off: "关", profile: "方案", manual: "手动", start: "开始", stop: "停止", actual: "实际",
-        setpoint: "目标", setpointShort: "目标", level: "档位", leftAxis: "左轴", rightAxis: "右轴",
-        and: "和", unreachable: "无法连接程序", error: "错误", auto: "自动", light: "浅色", dark: "深色",
+        setpoint: "目标", setpointShort: "目标", level: "档位",
+        unreachable: "无法连接程序", error: "错误", auto: "自动", light: "浅色", dark: "深色",
         scanning: "正在搜索测功车…", connecting: "正在连接", connected: "已连接",
         notFound: "未找到测功车", disconnected: "测功车已断开" },
   jp: { end: "終了", temperature: "室温", phone: "スマホでスキャン：エルゴメーターの横で開始・停止・プロファイル選択",
         locale: "ja-JP", power: "パワー", cadence: "ケイデンス", speed: "速度", pulse: "心拍数",
         resistance: "負荷", distance: "距離", energy: "エネルギー", time: "時間", target: "目標パワー",
         off: "オフ", profile: "プロファイル", manual: "手動", start: "開始", stop: "停止", actual: "実測",
-        setpoint: "目標", setpointShort: "目標", level: "レベル", leftAxis: "左軸", rightAxis: "右軸",
-        and: "と", unreachable: "プログラムに接続できません", error: "エラー", auto: "自動", light: "ライト", dark: "ダーク",
+        setpoint: "目標", setpointShort: "目標", level: "レベル",
+        unreachable: "プログラムに接続できません", error: "エラー", auto: "自動", light: "ライト", dark: "ダーク",
         scanning: "エルゴメーターを検索中…", connecting: "接続中:", connected: "接続済み:",
         notFound: "エルゴメーターが見つかりません", disconnected: "エルゴメーターが切断されました" },
 };
@@ -434,8 +444,9 @@ const TILES = [
 // One full-width row per chart: [sample key, label, unit, legend, second sample key drawn in the same chart]
 const CHARTS = [
   ["power", T.power, "W", `<i class="actual"></i>${T.actual} <i class="target"></i>${T.setpoint}`, "target"],
-  ["cadence", `${T.cadence} (rpm) ${T.and} ${T.resistance}`, T.level,
-   `<i></i>${T.cadence}, ${T.leftAxis} <i class="second"></i>${T.resistance}, ${T.rightAxis}`, "resistance"],
+  // The title is the legend: each name carries the colour of its curve and of its axis (left, right).
+  ["cadence", `<span class="key inline"><i></i></span>${T.cadence} (rpm) <span class="key inline"><i class="second"></i></span>${T.resistance}`,
+   T.level, "", "resistance"],
   ["heart rate", T.pulse, "bpm"],
   ["speed", T.speed, "km/h"],
 ];
@@ -481,13 +492,18 @@ document.getElementById("charts").innerHTML = CHARTS.map(([key, label, unit, leg
 
 const plots = CHARTS.map(([key, , unit, , second]) => ({ key, unit, second, el: document.querySelector(`[data-chart="${key}"]`) }));
 
+// On a phone the curves get the full width of the screen: the scales stand inside the chart.
+const MOBILE = matchMedia("(max-width: 640px)");
+MOBILE.addEventListener("change", () => location.reload());  // the layout is fixed when the charts are built
+
 function layout(key) {
-  const axis = { gridcolor: css("--grid"), linecolor: css("--border"), zeroline: false, tickfont: { size: 12.5 }, nticks: 5 };
+  const xAxis = { gridcolor: css("--grid"), linecolor: css("--border"), zeroline: false, tickfont: { size: 12.5 }, nticks: 5 };
+  const axis = MOBILE.matches ? { ...xAxis, ticklabelposition: "inside" } : xAxis;
   const result = {
-    margin: { l: 40, r: 40, t: 8, b: 24 },
+    margin: MOBILE.matches ? { l: 1, r: 1, t: 8, b: 24 } : { l: 40, r: 40, t: 8, b: 24 },
     paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
     font: { color: css("--plot-text"), family: css("--font"), weight: 700 },
-    xaxis: { ...axis, type: "date", tickformat: "%M:%S", hoverformat: "%H:%M:%S", showgrid: THEME === "sub" },  // sonar grid
+    xaxis: { ...xAxis, type: "date", tickformat: "%M:%S", hoverformat: "%H:%M:%S", showgrid: THEME === "sub" },  // sonar grid
     yaxis: { ...axis, rangemode: "tozero" },
     hovermode: "x", showlegend: false,
     hoverlabel: { bgcolor: css("--surface-1"), bordercolor: css("--border"), font: { color: css("--text-primary") } },
@@ -496,6 +512,7 @@ function layout(key) {
   if (bands) {
     const edges = [...new Set(bands.flatMap(([from, to]) => [from, to]))];
     result.yaxis = { ...axis, tickvals: edges, tickformat: ".0f", showgrid: false };
+    if (MOBILE.matches) result.yaxis.tickfont = { size: 12.5, color: css("--pulse-line") };  // the labels stand on the bands
     // The pulse axis is fixed to its bands; poll() widens the power axis when the power leaves them.
     result.yaxis.range = [edges[0], edges[edges.length - 1]];
     // The outer bands run on past their edge, so there is a colour behind every value.
