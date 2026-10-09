@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A single-user tool for a Christopeit AX 4000 ergometer: `ergometer.py` connects over Bluetooth LE, prints the live values, serves a browser panel and holds a target power with its own PID loop. There is no build step, no test suite and no linter.
+A single-user tool for a Christopeit AX 4000 ergometer: `ergometer.py` connects over Bluetooth LE, prints the live values, serves a browser panel and holds a target power with its own PID loop. The Python version has no build step; there is no test suite and no linter. `ergometer.c` is the same program in C (see "C version").
 
 The README, the panel's default language and the profile file names (`vorgabe-*.csv`) are German; code, comments and commit messages are English.
 
@@ -18,6 +18,13 @@ uv run --with bleak python3 -c "import ergometer; ..."    # import the module to
 ```
 
 `ergometer.py` declares its one dependency (`bleak`) inline (PEP 723), so `uv run` is the way to run it; plain `python3` lacks `bleak`.
+
+## C version
+
+`ergometer.c` is a port of `ergometer.py` with the same options, HTTP API, log format and QR encoder; `make` builds `./ergometer` (git-ignored). Bluetooth sits behind `ble.h`, implemented for macOS in `ble_macos.m` (CoreBluetooth, blocking calls on top of a dispatch queue). Threads replace asyncio: Bluetooth callbacks, `power_control`, one thread per HTTP request and the MQTT subscriber share `SAMPLES`, `CONTROL`, `STATUS` and `ROOM` under the recursive mutex `LOCK`, which is released around Bluetooth writes and sleeps.
+
+- Keep both versions in step: a change to the control loop, the HTTP API, the log columns or the QR code goes into both files.
+- To test without the bike, compile `ergometer.c` together with a stub that implements `ble.h` and simulates the ergometer, copy `panel.html` and the profiles next to that binary and run it on another port. For single functions, `#define main ergometer_main`, `#include "ergometer.c"` and compare the output with the Python module.
 
 ## Working without the bike
 

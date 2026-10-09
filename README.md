@@ -63,6 +63,18 @@ Das Programm sucht das Ergometer, verbindet sich und öffnet das Cockpit unter h
 
 Das Ergometer nimmt nur eine Bluetooth-Verbindung gleichzeitig an: Vor dem Start andere Apps (z. B. Kinomap) trennen und ein paar Umdrehungen treten, damit es aufwacht. Aus demselben Grund kann das Programm nur einmal laufen; ein zweiter Start scheitert mit `Address already in use`.
 
+## C-Version
+
+`ergometer.c` ist dasselbe Programm in C: gleiche Optionen, dasselbe Cockpit (`panel.html`), dieselben Vorgaben und Logdateien. Es braucht weder uv noch Python, dafür die Xcode Command Line Tools (`xcode-select --install`) zum Übersetzen:
+
+```
+cd ~/Ergometer
+make
+./ergometer --panel
+```
+
+Bluetooth läuft über CoreBluetooth und steckt in `ble_macos.m` (Objective-C, weil macOS dafür keine C-Schnittstelle hat); die C-Version läuft deshalb nur auf dem Mac. Es kann immer nur eines der beiden Programme laufen – das Ergometer nimmt eine Verbindung an, und beide benutzen Port 8050.
+
 ## Optionen
 
 | Option | Bedeutung |
