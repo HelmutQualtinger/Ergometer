@@ -144,16 +144,24 @@ def training_row(result: dict) -> dict:
 
 
 def file_in_training(row: dict, rr: str | None, note: str) -> tuple[dict, bool]:
-    """Append the ride to the training log, unless it is there already. Returns the row as logged and whether it is new."""
+    """Append the ride to the training log, unless it is there already; then only a missing blood pressure is filled in. Returns the row as logged and whether it is new."""
     log = TRAINING / "training_log.csv"
     raw = log.read_bytes()
     ending = b"\r\n" if raw.endswith(b"\r\n") else b"\n"
     lines = raw.split(ending)
     header = next(csv.reader([lines[0].decode("utf-8-sig")]))
     same = ("Datum", "Dauer_sek", "Kcal", "Watt")
-    for line in lines[1:]:
+    for index, line in enumerate(lines[1:], 1):
         logged = dict(zip(header, next(csv.reader([line.decode()]), [])))
         if all(logged.get(key) == row[key] for key in same):
+            # A blood pressure that is given after the ride was filed is added to its row.
+            if rr and not logged.get("RR_training"):
+                logged["RR_training"] = rr
+                out = io.StringIO()
+                csv.writer(out, lineterminator="").writerow([logged[name] for name in header])
+                lines[index] = out.getvalue().encode()
+                log.write_bytes(ending.join(lines))
+                regenerate_training_pdf()
             return logged, False
 
     # The project's own script assigns the number and knows the conventions; it only takes whole minutes.
@@ -172,10 +180,14 @@ def file_in_training(row: dict, rr: str | None, note: str) -> tuple[dict, bool]:
     lines[-2] = out.getvalue().encode()
     log.write_bytes(ending.join(lines))
 
+    regenerate_training_pdf()
+    return logged, True
+
+
+def regenerate_training_pdf() -> None:
     sys.path.insert(0, str(ADD_TRAINING.parent))
     import add_training
     add_training.regenerate_pdf(TRAINING / "training.html", TRAINING / "training.pdf")
-    return logged, True
 
 
 PAGE = """<!doctype html>

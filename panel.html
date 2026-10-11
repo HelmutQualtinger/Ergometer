@@ -734,6 +734,10 @@ async function poll() {
   try {
     const data = await (await fetch(`/data?since=${next}`)).json();
     if (data.next < next) return location.reload();  // program was restarted
+    // A page that is loaded after a run has ended shows that run as it stood at the stop. A phone's
+    // browser loads the page anew when it comes back from another app, so this is what keeps the curves.
+    const ended = !panelVersion && !data.profile?.start ? data.last_run : null;
+    if (ended) [runStart, runName] = [ended[0], data.profile?.name ?? ""];
     if (panelVersion && data.panel_version && data.panel_version !== panelVersion) return location.reload();
     panelVersion = data.panel_version;
     next = data.next;
@@ -746,6 +750,10 @@ async function poll() {
     const now = Date.now();
     showProfileList(data.profiles);
     showProfile(data.profile);
+    if (ended && data.profile?.steps.length && data.profile.name === ended[2]) {  // the profile where it was ridden
+      const { steps } = data.profile;
+      Plotly.restyle(powerPlot, { x: [steps.map(([seconds]) => rel(ended[0] + seconds * 1000))], y: [steps.map(([, watts]) => watts)] }, [2]);
+    }
     [slider.min, slider.max, slider.step] = data.power_range;
     live = !!data.profile?.start || data.target_power > 0;
     showTarget(data.target_power);
@@ -755,17 +763,18 @@ async function poll() {
     }
     // The curves start at the left edge; the window only slides once they would run out on the right.
     const ahead = data.profile?.steps.length ? LOOKAHEAD_SECONDS : 0;
-    const left = Math.max(firstTime, now + (ahead - WINDOW_SECONDS) * 1000);
+    const left = Math.max(firstTime, (ended ? ended[1] : now) + (ahead - WINDOW_SECONDS) * 1000);
     const range = [rel(left), rel(left + WINDOW_SECONDS * 1000)];
     // Past the first hour the labels need the hour as well.
     const tickformat = left + WINDOW_SECONDS * 1000 - firstTime >= 3600e3 ? "%-H:%M:%S" : "%M:%S";
     const running = !!data.profile?.start;
     // A stopped run keeps its window.
-    if (running || !runStart) for (const { el } of plots) Plotly.relayout(el, { "xaxis.range": range, "xaxis.tickformat": tickformat });
+    if (running || !runStart || ended) for (const { el } of plots) Plotly.relayout(el, { "xaxis.range": range, "xaxis.tickformat": tickformat });
     // The tiles always show the newest values, the curves only what was measured since "Start".
     // Only the newest samples can be inside the window (the ergometer sends about two per second).
     const last = data.samples[data.samples.length - 1];
-    const samples = running ? data.samples.filter((s) => s.t >= runStart).slice(-WINDOW_SECONDS * 4) : [];
+    const from = running ? runStart : ended ? ended[0] : Infinity, to = ended ? ended[1] : Infinity;
+    const samples = data.samples.filter((s) => s.t >= from && s.t <= to).slice(-WINDOW_SECONDS * 4);
 
     const times = samples.map((s) => rel(s.t));
     for (const { key, second, el } of samples.length ? plots : []) {

@@ -37,7 +37,8 @@ If it is unclear whether two logs are one ride, ask.
 
 - `--training`: file the ride in `~/training/training_log.csv`. Pass it when the user asks to
   store, log or "ablegen"; leave it out when they only want to see the ride. The script will
-  not add a ride twice - it recognises one that is already there and says so.
+  not add a ride twice - it recognises one that is already there and says so. Run again with
+  `--rr`, it adds a blood pressure the user gives later to that row, if the row has none.
 - `--note "..."`: the comment in the training log. Say what the session was, in the user's
   style: the profile and its structure, e.g. `HIIT 12x(30:30) 230W/80W, Vorgabe hiit-20, ohne Kinomap`.
   The targets in the log (printed section counts, the page's section table) tell you which

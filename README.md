@@ -4,7 +4,7 @@ Verbindet sich per Bluetooth LE mit einem Christopeit AX 4000 Ergometer, zeigt d
 
 - Messwerte in der Konsole: Geschwindigkeit, Trittfrequenz, Leistung, Widerstand, Distanz, Energie, Puls, Zeit
 - Cockpit im Browser mit Kacheln und Plotly-Verlaufskurven
-- Zielleistung in Watt: ein PID-Regler im Programm stellt dazu die Widerstandsstufe des Ergometers nach
+- Zielleistung in Watt: das Programm stellt dazu die Widerstandsstufe des Ergometers nach der Watt-Tabelle ein
 - Leistungsvorgaben aus Dateien (Intervalle, Stufentest) und Aufzeichnung jeder Fahrt als CSV
 - Handy als Fernbedienung: QR-Code scannen, dann Vorgabe, Start und Stopp am Ergometer bedienen
 
@@ -61,7 +61,7 @@ uv run ergometer.py --panel
 
 Das Programm sucht das Ergometer, verbindet sich und öffnet das Cockpit unter http://127.0.0.1:8050/. Im Terminal stehen dazu die Adresse für das Handy und ihr QR-Code. Beenden mit Ctrl+C; eine laufende Aufzeichnung wird dabei gespeichert.
 
-Das Ergometer nimmt nur eine Bluetooth-Verbindung gleichzeitig an: Vor dem Start andere Apps (z. B. Kinomap) trennen und ein paar Umdrehungen treten, damit es aufwacht. Aus demselben Grund kann das Programm nur einmal laufen; ein zweiter Start scheitert mit `Address already in use`.
+Das Ergometer nimmt nur eine Bluetooth-Verbindung gleichzeitig an: Vor dem Start andere Apps (z. B. Kinomap) trennen und ein paar Umdrehungen treten, damit es aufwacht. Findet das Programm das Ergometer beim Start nicht, sucht es noch fünfmal im Abstand von einer Minute und beendet sich erst dann. Aus demselben Grund kann das Programm nur einmal laufen; ein zweiter Start scheitert mit `Address already in use`.
 
 ## C-Version
 
@@ -73,7 +73,7 @@ make
 ./ergometer --panel
 ```
 
-Bluetooth läuft über CoreBluetooth und steckt in `ble_macos.m` (Objective-C, weil macOS dafür keine C-Schnittstelle hat); die C-Version läuft deshalb nur auf dem Mac. Es kann immer nur eines der beiden Programme laufen – das Ergometer nimmt eine Verbindung an, und beide benutzen Port 8050.
+Bluetooth läuft über CoreBluetooth und steckt in `ble_macos.m` (Objective-C, weil macOS dafür keine C-Schnittstelle hat); die C-Version läuft deshalb nur auf dem Mac. Anders als die Python-Version beendet sie sich nicht, wenn das Ergometer nach einer Pause einschläft: Sie speichert eine laufende Aufzeichnung, meldet „Ergometer disconnected“ und verbindet sich von selbst wieder, sobald jemand tritt. Es kann immer nur eines der beiden Programme laufen – das Ergometer nimmt eine Verbindung an, und beide benutzen Port 8050.
 
 ## Optionen
 
@@ -160,6 +160,7 @@ Mitgeliefert sind sieben Profile:
 - `vorgabe-sprint-30-60.csv` (19 Minuten): 10 Zyklen aus 30 Sekunden bei 250 W und 60 Sekunden bei 90 W, davor 2 Minuten bei 100 W, danach 2 Minuten bei 80 W
 - `vorgabe-persoenlich-30.csv` (30 Minuten): 3 Blöcke von 5 Minuten bei 200 W mit 2 Minuten bei 120 W dazwischen, 6 Minuten Einfahren in drei Stufen, 5 Minuten Ausfahren; aus einem Stufentest abgeleitet (85 % von 236 W)
 - `vorgabe-stufen-4x.csv` (30 Minuten): 4 Durchgänge mit stufenweisem Anstieg über 120, 150, 180 und 210 W (je 90 Sekunden), davor und danach 3 Minuten bei 100 W; aus einem Stufentest abgeleitet (51 bis 89 % von 236 W)
+- `vorgabe-stufen-4x-230.csv` (30 Minuten): wie `stufen-4x`, die oberste Stufe aber bei 230 statt 210 W
 - `vorgabe-stufentest.csv` (35 Minuten): ab 100 W alle 3 Minuten 25 W mehr, bis 350 W, danach 2 Minuten bei 80 W
 
 ## Aufzeichnung
@@ -192,33 +193,31 @@ Das schreibt neben die erste Datei `lauf-<jj-mm-tt-hh-mm-ss>.html`: Kennzahlen, 
 
 Mit `--training` wird die Fahrt zusätzlich in `~/training/training_log.csv` eingetragen, samt Distanz, Trittfrequenz, Spitzenleistung, Höchstgeschwindigkeit und Temperatur – also den Spalten, die sonst aus einer Kinomap-Zusammenfassung kommen. Eine Fahrt, die schon im Log steht, wird nicht doppelt eingetragen. Die Raumtemperatur steht in neueren Aufzeichnungen selbst; für ältere gibt es `--temperature`. In Claude Code erledigt der Skill `lauf` dasselbe.
 
-## Zielleistung und PID-Regler
+## Zielleistung und Regelung
 
 Im Cockpit stellt der Schieber „Zielleistung" die gewünschte Leistung ein (0 = aus, bis 300 W). Solange keine Fahrt läuft, merkt er sich den Wert nur für den nächsten Start; geregelt wird erst ab „Start". Die Regelung läuft im Programm, nicht im Ergometer:
 
-1. Einmal pro Sekunde wird die gemessene Leistung (Mittel der letzten drei Messwerte) mit dem Ziel verglichen.
-2. Der PID-Regler berechnet daraus die Widerstandsstufe (1–24) und sendet sie an das Ergometer.
-3. Abweichungen unter 8 W gelten als erreicht, damit der Regler nicht zwischen zwei Stufen pendelt. Eine Stufe entspricht etwa 15–20 W.
-4. Unter 20 rpm hält der Regler die Stufe, statt den Widerstand hochzudrehen.
-5. Ändert sich die Vorgabe, stellt das Programm die Stufe direkt aus der Watt-Tabelle des Herstellers ein (für die aktuelle Trittfrequenz) und lässt dem Ergometer 3 Sekunden Zeit. Der PID-Regler regelt danach nur noch nach; was er zur Tabelle dazulernen musste, nimmt er zur nächsten Vorgabe mit.
+1. Einmal pro Sekunde bestimmt das Programm aus der Watt-Tabelle des Herstellers die Widerstandsstufe (1–24), die bei der aktuellen Trittfrequenz (Mittel der letzten zwei Sekunden) der Zielleistung am nächsten kommt.
+2. Ändert sich die Vorgabe, wird diese Stufe sofort eingestellt.
+3. Bei gleicher Vorgabe folgt die Stufe der Trittfrequenz: Wer schneller tritt, bekommt weniger Widerstand, und umgekehrt. Verstellt wird erst, wenn die Tabelle eine Stufe verlangt, die mindestens 0,75 Stufen von der aktuellen entfernt ist, und frühestens 2 Sekunden nach der letzten Änderung; sonst würde das Programm zwischen zwei Stufen pendeln. Eine Stufe entspricht etwa 15–20 W.
+4. Unter 20 rpm bleibt die Stufe stehen, statt den Widerstand hochzudrehen.
 
-Das Ergometer bestätigt zwar auch eine direkte Watt-Vorgabe über Bluetooth, hält die Leistung dann aber nicht selbst; deshalb regelt das Programm.
+Ein Regler, der die gemeldete Leistung mit dem Ziel vergleicht (früher ein PID-Regler), ist nicht nötig: Der AX 4000 misst die Leistung nicht, sondern meldet den Wert seiner Watt-Tabelle für Stufe und Trittfrequenz – in den Aufzeichnungen stimmt beides auf etwa ein Watt überein. Die angezeigten Watt sind deshalb so genau wie diese Tabelle, nicht genauer.
+
+Das Ergometer bestätigt zwar auch eine direkte Watt-Vorgabe über Bluetooth, hält die Leistung dann aber nicht selbst; deshalb stellt das Programm die Stufen.
 
 Die Abstimmung steht als Konstanten oben in `ergometer.py`:
 
 | Konstante | Bedeutung |
 |---|---|
-| `PID_KP`, `PID_KI`, `PID_KD` | Verstärkungen (Stufen pro Watt) |
-| `PID_DEADBAND` | Mindestabstand zur aktuellen Stufe, bevor verstellt wird |
-| `PID_TOLERANCE` | Leistungsabweichung in Watt, die als erreicht gilt |
 | `WATT_TABLE` | Watt je Stufe und Trittfrequenz aus dem Handbuch des AX 4000 (20 bis 80 rpm; darüber wird hochgerechnet) |
-| `PID_SETTLE` | Wartezeit nach einem Sprung auf eine neue Stufe, bevor der Regler wieder arbeitet |
-| `PID_MAX_TRIM` | wie viele Stufen Korrektur zur Tabelle der Regler zur nächsten Vorgabe mitnimmt |
-| `MIN_CADENCE` | Trittfrequenz, unter der der Regler pausiert |
+| `LEVEL_HYSTERESIS` | Abstand in Stufen zwischen aktueller und verlangter Stufe, ab dem verstellt wird |
+| `LEVEL_SETTLE` | Wartezeit in Sekunden nach einer Änderung, bevor bei gleicher Vorgabe erneut verstellt wird |
+| `MIN_CADENCE` | Trittfrequenz, unter der die Stufe stehen bleibt |
 
 ## Technik
 
 - Die Messwerte kommen über den Bluetooth-Standard FTMS (Fitness Machine Service, `0x1826`), Merkmal „Indoor Bike Data" (`0x2AD2`).
 - Der Widerstand wird über den „Fitness Machine Control Point" (`0x2AD9`) gesetzt. Das AX 4000 landet dabei teils eine Stufe neben dem angeforderten Wert; das Programm liest die gemeldete Stufe zurück und korrigiert.
-- `ergometer.py` enthält Bluetooth-Anbindung, PID-Regler und einen kleinen HTTP-Server; `panel.html` ist das Cockpit und holt die Daten jede Sekunde vom Server.
+- `ergometer.py` enthält Bluetooth-Anbindung, Leistungsregelung und einen kleinen HTTP-Server; `panel.html` ist das Cockpit und holt die Daten jede Sekunde vom Server.
 - Den QR-Code erzeugt das Programm selbst, ohne zusätzliche Bibliothek: Byte-Modus, Versionen 1–6, Fehlerkorrektur Q (bis etwa 25 % beschädigte Daten bleiben lesbar). Die Stufe steht als `QR_LEVEL` oben in `ergometer.py` (L, M, Q oder H).

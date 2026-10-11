@@ -9,7 +9,7 @@ Usage:
     uv run ergometer.py                 # find the ergometer automatically
     uv run ergometer.py --scan          # just list nearby BLE devices
     uv run ergometer.py --panel         # also show a live Plotly panel in the browser
-    uv run ergometer.py --power 150     # hold 150 W by adjusting the resistance (PID)
+    uv run ergometer.py --power 150     # hold 150 W by adjusting the resistance
     uv run ergometer.py --panel --profile vorgabe-hit.csv   # follow a power profile from a file
     uv run ergometer.py --raw           # also dump the vendor-specific raw data
     uv run ergometer.py --name FS-1837  # match on a different name fragment
@@ -44,18 +44,14 @@ CONTROL_POINT = "00002ad9-0000-1000-8000-00805f9b34fb"
 RESISTANCE_RANGE = "00002ad6-0000-1000-8000-00805f9b34fb"
 POWER_RANGE = "00002ad8-0000-1000-8000-00805f9b34fb"
 
-# PID gains for the power controller: output is the resistance level, error is in watts.
-# One level is worth roughly 15-20 W at 70 rpm. The gains are deliberately gentle,
-# because a level change takes a second or two to show up in the measured power.
-PID_KP = 0.01    # levels per W
-PID_KI = 0.008   # levels per W*s
-PID_KD = 0.005   # levels per W/s
-PID_DEADBAND = 0.6  # only move when the output is this far from the current level
-PID_TOLERANCE = 8   # W; smaller errors count as zero, so it doesn't hunt between two levels
-PID_SETTLE = 3      # s; after a jump to a new level the controller waits for the measured power to follow
-PID_MAX_TRIM = 3    # levels; how far the controller's correction to the table is carried over to a new target
-MIN_CADENCE = 20    # rpm; below this the rider has stopped and the controller holds
+# The power control picks the resistance level from WATT_TABLE; see power_control().
+LEVEL_HYSTERESIS = 0.75  # levels; the level only changes when the table asks for one this far from the current one
+LEVEL_SETTLE = 2    # s; after a change of level within a target the rider gets time to find the cadence again
+MIN_CADENCE = 20    # rpm; below this the rider has stopped and the level is held
 MAX_TARGET = 300    # W; as far as the slider for the target power goes
+
+CONNECT_RETRIES = 5  # further searches at the start before the program gives up
+RETRY_PAUSE = 60     # s between those searches
 
 # The AX 4000 advertises under its FitShow module name, e.g. "FS-1837D8".
 # The room temperature comes from a sensor that publishes JSON telemetry over MQTT. Where the
@@ -180,7 +176,9 @@ CONTROL = {"loop": None, "client": None, "range": None, "power_range": [0, MAX_T
            # A manual run is a profile without a name and without steps: the slider sets the power.
            "profile": None,
            # Epoch ms of the "Start" press while a recording runs; see save_log().
-           "log_start": None}
+           "log_start": None,
+           # The run that ended last, [start, end, profile name]: a panel that is loaded afterwards still shows it.
+           "last_run": None}
 LOG_DIR = PANEL_HTML.parent / "logs"
 # The panel for a phone in the same network: {"url", "qr"}; see start_panel().
 COMPANION = {}
@@ -387,6 +385,8 @@ def save_log():
     what was measured between "Start" and "Stop" (or the end of the profile).
     """
     start, CONTROL["log_start"] = CONTROL["log_start"], None
+    if start:
+        CONTROL["last_run"] = [start, time.time() * 1000, (CONTROL["profile"] or {}).get("name", "")]
     rows = [sample for sample in SAMPLES if start and sample["t"] >= start]
     if not rows:
         return
@@ -447,66 +447,45 @@ async def set_resistance(level: float):
 
 
 async def power_control():
-    """Steer the resistance level so the measured power follows the target.
+    """Keep the resistance at the level whose table power at the current cadence is nearest the target.
 
-    A new target sets the level straight from the manufacturer's table for the current cadence.
-    The PID loop only trims from there: it corrects what the table gets wrong on this
-    ergometer and follows the rider's cadence.
+    The AX 4000 does not measure power: what it reports is WATT_TABLE for its level and the
+    cadence, to within a watt. So there is no error a feedback loop could correct, and the
+    level follows from target and cadence directly. A new target sets it at once; within a
+    target it follows the rider's cadence, with some hysteresis so it does not flip between
+    two neighbouring levels.
 
     The AX 4000 acknowledges FTMS "Set Target Power" (opcode 0x05) but then ignores
     it and keeps its resistance level, so the control has to happen here.
     """
-    integral = None
-    last_error = None
     last_target = 0
-    settled = 0.0  # from when on the PID may work again after a jump
-    last_time = time.monotonic()
+    settled = 0.0  # until then the level stays, unless the target changes
     while True:
         await asyncio.sleep(1)
-        now = time.monotonic()
-        dt, last_time = now - last_time, now
         follow_profile()
         target = CONTROL["target_power"]
-        recent = [s for s in SAMPLES[-3:] if "power" in s and "resistance" in s]
+        recent = [s for s in SAMPLES[-8:] if "cadence" in s and "resistance" in s]  # about two seconds
         if not target or not recent or time.time() * 1000 - recent[-1]["t"] > 3000:
-            integral = None
+            last_target = 0
             continue
-        cadence = recent[-1].get("cadence", 0)
+        cadence = sum(s["cadence"] for s in recent) / len(recent)
         if cadence < MIN_CADENCE:
             continue  # hold instead of winding the resistance up while nobody pedals
 
         level = recent[-1]["resistance"]
         low, high, _ = CONTROL["range"]
-        if integral is None or target != last_target:
-            # A new target: jump to the level the table gives for it at this cadence. What the
-            # controller had to add to the table for the old target is carried over.
-            trim = integral - table_level(last_target, cadence) if integral is not None and last_target else 0.0
-            trim = min(max(trim, -PID_MAX_TRIM), PID_MAX_TRIM)
-            integral = min(max(table_level(target, cadence) + trim, low), high)
-            last_target, last_error = target, None
-            try:
-                if round(integral) != level:
-                    await set_resistance(integral)
-            except Exception as exc:
-                print(f"{stamp()}  could not set resistance: {exc}")
-            settled = time.monotonic() + PID_SETTLE
+        wanted = min(max(table_level(target, cadence), low), high)
+        new_target = target != last_target
+        if not new_target and (time.monotonic() < settled or abs(wanted - level) <= LEVEL_HYSTERESIS):
             continue
-        if now < settled:
-            continue  # the measured power still belongs to the old level
-
-        error = target - sum(s["power"] for s in recent) / len(recent)
-        if abs(error) < PID_TOLERANCE:
-            error = 0.0
-        if last_error is None:
-            last_error = error  # no kick from the derivative on the first step after a jump
-        integral = min(max(integral + PID_KI * error * dt, low), high)  # clamped: anti-windup
-        output = min(max(integral + PID_KP * error + PID_KD * (error - last_error) / dt, low), high)
-        last_error = error
-        if abs(output - level) > PID_DEADBAND:
-            try:
-                await set_resistance(output)
-            except Exception as exc:
-                print(f"{stamp()}  could not set resistance: {exc}")
+        last_target = target
+        if round(wanted) == level:
+            continue
+        try:
+            await set_resistance(wanted)
+        except Exception as exc:
+            print(f"{stamp()}  could not set resistance: {exc}")
+        settled = time.monotonic() + LEVEL_SETTLE
 
 
 def mqtt_string(text: str) -> bytes:
@@ -584,7 +563,7 @@ class PanelHandler(BaseHTTPRequestHandler):
             payload = {"status": STATUS["text"], "next": len(SAMPLES), "samples": SAMPLES[since:],
                        "connected": bool(CONTROL["range"]), "power_range": CONTROL["power_range"],
                        "target_power": CONTROL["target_power"], "profile": CONTROL["profile"],
-                       "profiles": profile_files(),
+                       "last_run": CONTROL["last_run"], "profiles": profile_files(),
                        # Room temperature in °C, or None while there is no reading from the last two minutes.
                        "temperature": ROOM["temperature"] if time.time() - ROOM["t"] < 120 else None,
                        # Lets an open page notice that panel.html was edited and reload itself.
@@ -718,8 +697,14 @@ async def run(args):
         load_profile(Path(args.profile).name, Path(args.profile).read_text())
     if args.panel:
         start_panel(args.port)
-    device = await find_ergometer(args)
-    if device is None:
+    for retry in range(CONNECT_RETRIES + 1):
+        if retry:
+            set_status(f"Ergometer not found, retry {retry} of {CONNECT_RETRIES} in {RETRY_PAUSE} s")
+            await asyncio.sleep(RETRY_PAUSE)
+        device = await find_ergometer(args)
+        if device:
+            break
+    else:
         return
 
     disconnected = asyncio.Event()
@@ -779,7 +764,7 @@ async def run(args):
                            range=[low / 10, high / 10, (step or 10) / 10])
             if POWER_RANGE in uuids:
                 low, high, step = struct.unpack("<hhH", await client.read_gatt_char(POWER_RANGE))
-                CONTROL["power_range"] = [0, MAX_TARGET, max(step, 5)]  # the ergometer's own limit is not ours: the PID sets levels
+                CONTROL["power_range"] = [0, MAX_TARGET, max(step, 5)]  # the ergometer's own limit is not ours: the program sets levels
             if args.profile:
                 start_profile()  # a profile from the command line starts on connect
             CONTROL["task"] = asyncio.create_task(power_control())
@@ -798,7 +783,7 @@ def main():
     parser.add_argument("--timeout", type=float, default=10, help="scan time in seconds (default: 10)")
     parser.add_argument("--panel", action="store_true", help="show a live Plotly panel in the browser")
     parser.add_argument("--port", type=int, default=8050, help="port for the panel (default: 8050)")
-    parser.add_argument("--power", type=float, default=0, help="target power in W, held by a PID controller on the resistance")
+    parser.add_argument("--power", type=float, default=0, help="target power in W, held by adjusting the resistance level")
     parser.add_argument("--profile", help="CSV file with rows mm:ss,watt; the target power follows it once connected")
     parser.add_argument("--raw", action="store_true", help="also print raw bytes of all other notifications")
     parser.add_argument("--scan", action="store_true", help="only list nearby BLE devices")

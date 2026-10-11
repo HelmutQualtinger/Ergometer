@@ -6,7 +6,7 @@
  *     ./ergometer                 # find the ergometer automatically
  *     ./ergometer --scan          # just list nearby BLE devices
  *     ./ergometer --panel         # also show a live Plotly panel in the browser
- *     ./ergometer --power 150     # hold 150 W by adjusting the resistance (PID)
+ *     ./ergometer --power 150     # hold 150 W by adjusting the resistance
  *     ./ergometer --panel --profile vorgabe-hit.csv   # follow a power profile from a file
  *     ./ergometer --raw           # also dump the vendor-specific raw data
  *     ./ergometer --name FS-1837  # match on a different name fragment
@@ -55,18 +55,14 @@
 #define RESISTANCE_RANGE "00002ad6-0000-1000-8000-00805f9b34fb"
 #define POWER_RANGE "00002ad8-0000-1000-8000-00805f9b34fb"
 
-/* PID gains for the power controller: output is the resistance level, error is in watts.
- * One level is worth roughly 15-20 W at 70 rpm. The gains are deliberately gentle,
- * because a level change takes a second or two to show up in the measured power. */
-#define PID_KP 0.01       /* levels per W */
-#define PID_KI 0.008      /* levels per W*s */
-#define PID_KD 0.005      /* levels per W/s */
-#define PID_DEADBAND 0.6  /* only move when the output is this far from the current level */
-#define PID_TOLERANCE 8   /* W; smaller errors count as zero, so it doesn't hunt between two levels */
-#define PID_SETTLE 3      /* s; after a jump to a new level the controller waits for the measured power to follow */
-#define PID_MAX_TRIM 3    /* levels; how far the controller's correction to the table is carried over to a new target */
-#define MIN_CADENCE 20    /* rpm; below this the rider has stopped and the controller holds */
+/* The power control picks the resistance level from WATT_TABLE; see power_control(). */
+#define LEVEL_HYSTERESIS 0.75 /* levels; the level only changes when the table asks for one this far from the current one */
+#define LEVEL_SETTLE 2    /* s; after a change of level within a target the rider gets time to find the cadence again */
+#define MIN_CADENCE 20    /* rpm; below this the rider has stopped and the level is held */
 #define MAX_TARGET 300    /* W; as far as the slider for the target power goes */
+
+#define CONNECT_RETRIES 5 /* further searches at the start before the program gives up */
+#define RETRY_PAUSE 60    /* s between those searches */
 
 /* The room temperature comes from a sensor that publishes JSON telemetry over MQTT. Where the
  * broker is stays out of the repository: MQTT_HOST, MQTT_PORT and MQTT_TOPIC come from the
@@ -326,6 +322,11 @@ static struct {
         double start;
     } profile;
     double log_start; /* epoch ms of the "Start" press while a recording runs, else 0; see save_log() */
+    /* The run that ended last: a panel that is loaded afterwards still shows it. start is 0 before the first. */
+    struct {
+        double start, end;
+        char name[256];
+    } last_run;
 } CONTROL = {.power_range = {0, MAX_TARGET, 5}};
 
 static char PROGRAM_DIR[1024] = "."; /* panel.html, .env, the profiles and logs/ live next to the program */
@@ -664,6 +665,11 @@ static void save_log(void) {
     lock();
     double start = CONTROL.log_start;
     CONTROL.log_start = 0;
+    if (start) {
+        CONTROL.last_run.start = start;
+        CONTROL.last_run.end = now_ms();
+        snprintf(CONTROL.last_run.name, sizeof CONTROL.last_run.name, "%s", CONTROL.profile.name);
+    }
     size_t first = SAMPLE_COUNT;
     while (start && first > 0 && SAMPLES[first - 1].t >= start) first--;
     size_t rows = SAMPLE_COUNT - first;
@@ -817,35 +823,32 @@ static bool set_resistance(double level) {
     return true;
 }
 
-/* Steer the resistance level so the measured power follows the target.
+/* Keep the resistance at the level whose table power at the current cadence is nearest the target.
  *
- * A new target sets the level straight from the manufacturer's table for the current cadence.
- * The PID loop only trims from there: it corrects what the table gets wrong on this
- * ergometer and follows the rider's cadence.
+ * The AX 4000 does not measure power: what it reports is WATT_TABLE for its level and the
+ * cadence, to within a watt. So there is no error a feedback loop could correct, and the
+ * level follows from target and cadence directly. A new target sets it at once; within a
+ * target it follows the rider's cadence, with some hysteresis so it does not flip between
+ * two neighbouring levels.
  *
  * The AX 4000 acknowledges FTMS "Set Target Power" (opcode 0x05) but then ignores
  * it and keeps its resistance level, so the control has to happen here. */
 static void *power_control(void *unused) {
     (void)unused;
-    bool has_integral = false, has_error = false;
-    double integral = 0, last_error = 0, last_target = 0;
-    double settled = 0; /* from when on the PID may work again after a jump */
-    double last_time = monotonic();
+    double last_target = 0;
+    double settled = 0; /* until then the level stays, unless the target changes */
     for (;;) {
         sleep_for(1);
-        double now = monotonic(), dt = now - last_time;
-        last_time = now;
 
         lock();
         follow_profile();
-        double target = CONTROL.target_power, power = 0, cadence = 0, level = 0, t = 0;
+        double target = CONTROL.target_power, cadence = 0, level = 0, t = 0;
         int recent = 0;
-        for (size_t i = SAMPLE_COUNT > 3 ? SAMPLE_COUNT - 3 : 0; i < SAMPLE_COUNT; i++) {
+        for (size_t i = SAMPLE_COUNT > 8 ? SAMPLE_COUNT - 8 : 0; i < SAMPLE_COUNT; i++) { /* about two seconds */
             const struct sample *sample = &SAMPLES[i];
-            if (!(sample->present & 1u << POWER) || !(sample->present & 1u << RESISTANCE)) continue;
+            if (!(sample->present & 1u << CADENCE) || !(sample->present & 1u << RESISTANCE)) continue;
             recent++;
-            power += sample->value[POWER];
-            cadence = sample->present & 1u << CADENCE ? sample->value[CADENCE] : 0;
+            cadence += sample->value[CADENCE];
             level = sample->value[RESISTANCE];
             t = sample->t;
         }
@@ -854,34 +857,19 @@ static void *power_control(void *unused) {
         unlock();
 
         if (!connected || !target || !recent || now_ms() - t > 3000) {
-            has_integral = false;
+            last_target = 0;
             continue;
         }
+        cadence /= recent;
         if (cadence < MIN_CADENCE) continue; /* hold instead of winding the resistance up while nobody pedals */
 
-        if (!has_integral || target != last_target) {
-            /* A new target: jump to the level the table gives for it at this cadence. What the
-             * controller had to add to the table for the old target is carried over. */
-            double trim = has_integral && last_target ? integral - table_level(last_target, cadence) : 0.0;
-            trim = clamp(trim, -PID_MAX_TRIM, PID_MAX_TRIM);
-            integral = clamp(table_level(target, cadence) + trim, low, high);
-            has_integral = true;
-            last_target = target;
-            has_error = false;
-            if (rint(integral) != level && !set_resistance(integral)) printf("%s  could not set resistance\n", stamp());
-            settled = monotonic() + PID_SETTLE;
-            continue;
-        }
-        if (now < settled) continue; /* the measured power still belongs to the old level */
-
-        double error = target - power / recent;
-        if (fabs(error) < PID_TOLERANCE) error = 0.0;
-        if (!has_error) last_error = error; /* no kick from the derivative on the first step after a jump */
-        has_error = true;
-        integral = clamp(integral + PID_KI * error * dt, low, high); /* clamped: anti-windup */
-        double output = clamp(integral + PID_KP * error + PID_KD * (error - last_error) / dt, low, high);
-        last_error = error;
-        if (fabs(output - level) > PID_DEADBAND && !set_resistance(output)) printf("%s  could not set resistance\n", stamp());
+        double wanted = clamp(table_level(target, cadence), low, high);
+        bool new_target = target != last_target;
+        if (!new_target && (monotonic() < settled || fabs(wanted - level) <= LEVEL_HYSTERESIS)) continue;
+        last_target = target;
+        if (rint(wanted) == level) continue;
+        if (!set_resistance(wanted)) printf("%s  could not set resistance\n", stamp());
+        settled = monotonic() + LEVEL_SETTLE;
     }
     return NULL;
 }
@@ -1075,6 +1063,13 @@ static void http_get(int connection, const char *path, const char *query) {
                    CONTROL.connected ? "true" : "false", CONTROL.power_range[0], CONTROL.power_range[1], CONTROL.power_range[2],
                    CONTROL.target_power);
         json_profile(&json);
+        if (CONTROL.last_run.start) {
+            buf_printf(&json, ", \"last_run\": [%.3f, %.3f, ", CONTROL.last_run.start, CONTROL.last_run.end);
+            buf_json_string(&json, CONTROL.last_run.name);
+            buf_printf(&json, "]");
+        } else {
+            buf_printf(&json, ", \"last_run\": null");
+        }
         buf_printf(&json, ", \"profiles\": [");
         for (int i = 0; i < name_count; i++) {
             buf_printf(&json, i ? ", " : "");
@@ -1282,8 +1277,10 @@ static bool contains_lower(const char *text, const char *fragment) { /* the frag
     return false;
 }
 
-static const ble_device *find_ergometer(void) {
-    set_status("Scanning for %.0f s ...", ARGS.timeout);
+/* The ergometer among the devices of a scan. `again` is the search after a lost connection:
+ * it repeats until the ergometer wakes up, so it does not list the neighbourhood each time. */
+static const ble_device *find_ergometer(bool again) {
+    if (!again) set_status("Scanning for %.0f s ...", ARGS.timeout);
     int count = ble_scan(ARGS.timeout, DEVICES, MAX_DEVICES);
     for (int i = 0; i < count; i++) {
         const ble_device *device = &DEVICES[i];
@@ -1297,6 +1294,7 @@ static const ble_device *find_ergometer(void) {
         /* Without an explicit name, any fitness machine is a good candidate. */
         if (!ARGS.name && device->ftms) return device;
     }
+    if (again) return NULL;
     set_status("Ergometer not found");
     if (count < 0) return NULL;
     printf("Nearby devices:\n");
@@ -1312,8 +1310,20 @@ static void print_raw(const char *uuid, const uint8_t *data, size_t length) {
     printf("\n");
 }
 
+/* The AX 4000 goes to sleep after a while without pedalling. It then stops sending, and macOS
+ * does not always report that as a disconnect - so silence counts as one. While it is awake it
+ * sends about four times a second, pedalling or not. */
+#define SILENCE 20 /* s without any notification after which the connection counts as lost */
+static pthread_mutex_t END_LOCK = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t END = PTHREAD_COND_INITIALIZER;
+static bool DISCONNECTED;
+static double LAST_DATA; /* monotonic() of the latest notification */
+
 /* A notification or indication from the ergometer; runs on the Bluetooth thread. */
 static void on_data(const char *uuid, const uint8_t *data, size_t length) {
+    pthread_mutex_lock(&END_LOCK);
+    LAST_DATA = monotonic();
+    pthread_mutex_unlock(&END_LOCK);
     if (!strcmp(uuid, CONTROL_POINT) && !RAW) {
         /* Response: 0x80, request opcode, result (1 = success). */
         if (length >= 3 && data[2] != 1) printf("%s  ergometer rejected command 0x%02x (result %d)\n", stamp(), data[1], data[2]);
@@ -1345,9 +1355,6 @@ static void on_data(const char *uuid, const uint8_t *data, size_t length) {
     }
 }
 
-static pthread_mutex_t END_LOCK = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t END = PTHREAD_COND_INITIALIZER;
-static bool DISCONNECTED;
 
 static void on_disconnect(void) {
     pthread_mutex_lock(&END_LOCK);
@@ -1365,6 +1372,8 @@ static bool read_range(const char *uuid, double range[3]) {
     range[2] = data[4] | data[5] << 8;
     return true;
 }
+
+static bool connected_session(const ble_device *device, bool again);
 
 static void run(void) {
     if (ARGS.scan) {
@@ -1388,35 +1397,54 @@ static void run(void) {
         free(text);
     }
     if (ARGS.panel) start_panel(ARGS.port, true);
-    const ble_device *device = find_ergometer();
-    if (!device) return;
+    /* The first searches decide whether there is an ergometer at all. Once it was connected,
+     * a lost connection is searched for again until it is back or the program is stopped. */
+    bool again = false;
+    for (int retry = 0;;) {
+        const ble_device *device = find_ergometer(again);
+        if (device && connected_session(device, again)) {
+            again = true;
+            continue;
+        }
+        if (again) {
+            sleep_for(2);
+            continue;
+        }
+        if (++retry > CONNECT_RETRIES) return;
+        set_status("Ergometer not found, retry %d of %d in %d s", retry, CONNECT_RETRIES, RETRY_PAUSE);
+        sleep_for(RETRY_PAUSE);
+    }
+}
 
+/* Connect and stay until the connection is lost; false if it could not be made. */
+static bool connected_session(const ble_device *device, bool again) {
     char error[256];
     set_status("Connecting to %s [%s] ...", *device->name ? device->name : "(no name)", device->address);
     if (!ble_connect(device->address, on_disconnect, error, sizeof error)) {
         set_status("Could not connect: %s", error);
-        return;
+        return false;
     }
     set_status("Connected to %s", *device->name ? device->name : device->address);
 
     static ble_characteristic characteristics[128];
     int count = ble_characteristics(characteristics, 128);
     bool has_bike_data = false, has_control = false, has_range = false, has_power_range = false;
-    printf("Services:\n");
+    if (!again) printf("Services:\n");
     for (int i = 0; i < count; i++) {
         const ble_characteristic *c = &characteristics[i];
+        has_bike_data |= !strcmp(c->uuid, INDOOR_BIKE_DATA) && c->properties & (BLE_NOTIFY | BLE_INDICATE);
+        has_control |= !strcmp(c->uuid, CONTROL_POINT);
+        has_range |= !strcmp(c->uuid, RESISTANCE_RANGE);
+        has_power_range |= !strcmp(c->uuid, POWER_RANGE);
+        if (again) continue;
         if (!i || strcmp(c->service, characteristics[i - 1].service)) printf("  %s\n", c->service);
         char properties[64] = "";
         static const char *names[] = {"read", "write", "notify", "indicate", "write-without-response"};
         for (int p = 0; p < 5; p++)
             if (c->properties & 1u << p) snprintf(properties + strlen(properties), sizeof properties - strlen(properties), "%s%s", *properties ? "," : "", names[p]);
         printf("    %s  %s\n", c->uuid, properties);
-        has_bike_data |= !strcmp(c->uuid, INDOOR_BIKE_DATA) && c->properties & (BLE_NOTIFY | BLE_INDICATE);
-        has_control |= !strcmp(c->uuid, CONTROL_POINT);
-        has_range |= !strcmp(c->uuid, RESISTANCE_RANGE);
-        has_power_range |= !strcmp(c->uuid, POWER_RANGE);
     }
-    if (!has_bike_data) {
+    if (!has_bike_data && !again) {
         printf("\nNo standard FTMS Indoor Bike Data characteristic - showing raw data only.\n");
         RAW = true;
     }
@@ -1427,31 +1455,50 @@ static void run(void) {
         if (!ble_subscribe(uuid, on_data)) printf("  could not subscribe to %s\n", uuid);
     }
 
-    double range[3];
+    /* No Bluetooth call while LOCK is held: its answer comes on the thread that also delivers
+     * the notifications, and on_data() waits for LOCK. */
+    double range[3], power_range[3];
     if (has_control && has_range && read_range(RESISTANCE_RANGE, range) &&
         ble_write(CONTROL_POINT, (uint8_t[]){0x00}, 1)) { /* request control */
+        bool has_step = has_power_range && read_range(POWER_RANGE, power_range);
         lock();
         CONTROL.range[0] = range[0] / 10, CONTROL.range[1] = range[1] / 10, CONTROL.range[2] = (range[2] ? range[2] : 10) / 10;
         CONTROL.connected = true;
-        /* The ergometer's own power limit is not ours: the PID sets levels. */
-        if (has_power_range && read_range(POWER_RANGE, range)) CONTROL.power_range[2] = fmax(range[2], 5);
-        if (ARGS.profile) start_profile(); /* a profile from the command line starts on connect */
+        /* The ergometer's own power limit is not ours: the program sets levels. */
+        if (has_step) CONTROL.power_range[2] = fmax(power_range[2], 5);
+        if (ARGS.profile && !again) start_profile(); /* a profile from the command line starts on connect */
         unlock();
         pthread_t thread;
-        pthread_create(&thread, NULL, power_control, NULL);
+        if (!again) pthread_create(&thread, NULL, power_control, NULL);
     } else if (has_control && has_range) {
         printf("The ergometer did not hand over control; the resistance cannot be set.\n");
     }
 
     printf("\nReceiving data, start pedalling. Press Ctrl+C to stop.\n\n");
     pthread_mutex_lock(&END_LOCK);
-    while (!DISCONNECTED) pthread_cond_wait(&END, &END_LOCK);
+    LAST_DATA = monotonic();
+    while (!DISCONNECTED && monotonic() - LAST_DATA < SILENCE) {
+        struct timespec until;
+        clock_gettime(CLOCK_REALTIME, &until);
+        until.tv_sec += 2;
+        pthread_cond_timedwait(&END, &END_LOCK, &until);
+    }
+    bool silent = !DISCONNECTED;
+    DISCONNECTED = false;
     pthread_mutex_unlock(&END_LOCK);
     lock();
     CONTROL.connected = false;
+    /* The run ends here as it does with "Stop": what was recorded is saved, and nothing
+     * drives the resistance when the ergometer is back. */
+    bool manual = CONTROL.profile.loaded && !CONTROL.profile.count;
+    stop_profile();
+    CONTROL.target_power = 0;
+    if (manual) clear_profile();
     unlock();
-    save_log();
-    set_status("Ergometer disconnected");
+    ble_disconnect();
+    if (silent) printf("%s  no data from the ergometer for %d s\n", stamp(), SILENCE);
+    set_status("Ergometer disconnected - pedal to wake it");
+    return true;
 }
 
 /* Ctrl+C: the handler only wakes this thread, which may do what a handler may not. */
@@ -1481,7 +1528,7 @@ static void usage(const char *program) {
            "  --timeout S        scan time in seconds (default: 10)\n"
            "  --panel            show a live Plotly panel in the browser\n"
            "  --port PORT        port for the panel (default: 8050)\n"
-           "  --power W          target power in W, held by a PID controller on the resistance\n"
+           "  --power W          target power in W, held by adjusting the resistance level\n"
            "  --profile FILE     CSV file with rows mm:ss,watt; the target power follows it once connected\n"
            "  --raw              also print raw bytes of all other notifications\n"
            "  --scan             only list nearby BLE devices\n",

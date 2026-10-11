@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A single-user tool for a Christopeit AX 4000 ergometer: `ergometer.py` connects over Bluetooth LE, prints the live values, serves a browser panel and holds a target power with its own PID loop. The Python version has no build step; there is no test suite and no linter. `ergometer.c` is the same program in C (see "C version").
+A single-user tool for a Christopeit AX 4000 ergometer: `ergometer.py` connects over Bluetooth LE, prints the live values, serves a browser panel and holds a target power by setting the resistance level from the watt table. The Python version has no build step; there is no test suite and no linter. `ergometer.c` is the same program in C (see "C version").
 
 The README, the panel's default language and the profile file names (`vorgabe-*.csv`) are German; code, comments and commit messages are English.
 
@@ -23,6 +23,7 @@ uv run --with bleak python3 -c "import ergometer; ..."    # import the module to
 
 `ergometer.c` is a port of `ergometer.py` with the same options, HTTP API, log format and QR encoder; `make` builds `./ergometer` (git-ignored). Bluetooth sits behind `ble.h`, implemented for macOS in `ble_macos.m` (CoreBluetooth, blocking calls on top of a dispatch queue). Threads replace asyncio: Bluetooth callbacks, `power_control`, one thread per HTTP request and the MQTT subscriber share `SAMPLES`, `CONTROL`, `STATUS` and `ROOM` under the recursive mutex `LOCK`, which is released around Bluetooth writes and sleeps.
 
+- One deliberate difference: the Python version exits when the ergometer disconnects. The C version ends the run as Stop does (`stop_profile()`), then scans again until the ergometer is back (`run()` loops over `connected_session()`). It also counts `SILENCE` seconds without a notification as a disconnect, because the sleeping AX 4000 stops sending and CoreBluetooth did not always report that.
 - Keep both versions in step: a change to the control loop, the HTTP API, the log columns or the QR code goes into both files.
 - To test without the bike, compile `ergometer.c` together with a stub that implements `ble.h` and simulates the ergometer, copy `panel.html` and the profiles next to that binary and run it on another port. For single functions, `#define main ergometer_main`, `#include "ergometer.c"` and compare the output with the Python module.
 
@@ -35,7 +36,7 @@ uv run --with bleak python3 -c "import ergometer; ..."    # import the module to
 
 ## Architecture
 
-Two files: `ergometer.py` (Bluetooth, PID controller, HTTP server) and `panel.html` (the whole panel, Plotly from a CDN).
+Two files: `ergometer.py` (Bluetooth, power control, HTTP server) and `panel.html` (the whole panel, Plotly from a CDN).
 
 **Shared state.** The asyncio thread (Bluetooth and control loop) and the HTTP server thread share module globals without locks:
 
@@ -44,7 +45,7 @@ Two files: `ergometer.py` (Bluetooth, PID controller, HTTP server) and `panel.ht
 
 **Data path.** FTMS Indoor Bike Data (`0x2AD2`) → `parse_indoor_bike_data` (driven by the `BIKE_FIELDS` table) → `SAMPLES` → `GET /data?since=N` → the panel, which polls once a second and only asks for samples it has not seen.
 
-**Control path.** `power_control()` runs once a second: `follow_profile()` turns a running profile into `target_power`, then a resistance level is computed and `set_resistance()` writes it to the control point (`0x2AD9`). A new target jumps straight to the level that `WATT_TABLE` (from the AX 4000 manual) gives for the current cadence, plus the trim the PID had accumulated; the PID then waits `PID_SETTLE` seconds and only trims. The loop can be exercised without the bike by replacing `set_resistance` and feeding `SAMPLES` from a model that uses `table_power()`. The AX 4000 acknowledges FTMS "Set Target Power" but ignores it, which is why the control lives here. It can also land one level beside the requested one; `set_resistance()` reads the reported level back and keeps a `write_offset`.
+**Control path.** `power_control()` runs once a second: `follow_profile()` turns a running profile into `target_power`, then `table_level()` gives the resistance level at which `WATT_TABLE` (from the AX 4000 manual) yields that power at the current cadence (mean of about two seconds), and `set_resistance()` writes it to the control point (`0x2AD9`). A new target is set at once; within a target the level follows the cadence, but only moves when the wanted level is more than `LEVEL_HYSTERESIS` away and `LEVEL_SETTLE` seconds have passed. There is no feedback on the reported power, on purpose: the AX 4000 does not measure power but reports its own table for level and cadence (logs agree with `table_power()` to about a watt), so a PID loop, which the program had until October 2026, had nothing to correct. The loop can be exercised without the bike by replacing `set_resistance` and feeding `SAMPLES` from a model that uses `table_power()`. The AX 4000 acknowledges FTMS "Set Target Power" but ignores it, which is why the control lives here. It can also land one level beside the requested one; `set_resistance()` reads the reported level back and keeps a `write_offset`.
 
 **Manual run.** Without a file profile the panel's menu says "manual": Start then creates a profile with no name and no steps and takes the target power from the slider (`MAX_TARGET` = 300 W). `follow_profile()` leaves such a profile alone, `/target` changes the power without ending it, and Stop removes it again. While nothing runs and the controller is off, the panel does not send slider moves at all (`live` in `panel.html`).
 
@@ -53,6 +54,8 @@ Two files: `ergometer.py` (Bluetooth, PID controller, HTTP server) and `panel.ht
 - whether the profile drives `target_power`,
 - whether a recording runs (`start_profile()` sets `log_start`; `save_log()` writes `logs/log-<yy-mm-dd-hh-mm-ss>.csv` from the samples since then),
 - whether the panel draws curves (`syncRun()` in `panel.html`; before Start the charts stand at 00:00, after Stop they freeze).
+
+`save_log()` also notes the run in `CONTROL["last_run"]` (`[start, end, profile name]`, sent with `/data`). A page that is loaded after the run has ended draws its curves from that - a phone's browser reloads the page when it comes back from another app, and without it the charts came up empty.
 
 Every path that ends a run must go through `stop_profile()` or `save_log()`: the Stop button, the profile's own end, a manual `/target`, choosing another profile, a disconnect and program exit. `save_log()` is idempotent.
 
