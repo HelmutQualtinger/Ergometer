@@ -147,8 +147,9 @@ def file_in_training(row: dict, rr: str | None, note: str) -> tuple[dict, bool]:
     """Append the ride to the training log, unless it is there already; then only a missing blood pressure is filled in. Returns the row as logged and whether it is new."""
     log = TRAINING / "training_log.csv"
     raw = log.read_bytes()
-    ending = b"\r\n" if raw.endswith(b"\r\n") else b"\n"
-    lines = raw.split(ending)
+    # The file's own line ending is the one most lines have: other tools have left a single odd one behind.
+    ending = b"\r\n" if raw.count(b"\r\n") * 2 > raw.count(b"\n") else b"\n"
+    lines = raw.splitlines() + [b""]
     header = next(csv.reader([lines[0].decode("utf-8-sig")]))
     same = ("Datum", "Dauer_sek", "Kcal", "Watt")
     for index, line in enumerate(lines[1:], 1):
@@ -172,7 +173,7 @@ def file_in_training(row: dict, rr: str | None, note: str) -> tuple[dict, bool]:
     subprocess.run(command, check=True, capture_output=True, text=True, cwd=TRAINING)
 
     # Then the measured columns, which that script only fills from a Kinomap summary.
-    lines = log.read_bytes().split(ending)
+    lines = log.read_bytes().splitlines() + [b""]
     logged = dict(zip(header, next(csv.reader([lines[-2].decode()]))))
     logged.update(row)
     out = io.StringIO()
