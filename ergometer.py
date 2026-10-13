@@ -10,7 +10,7 @@ Usage:
     uv run ergometer.py --scan          # just list nearby BLE devices
     uv run ergometer.py --panel         # also show a live Plotly panel in the browser
     uv run ergometer.py --power 150     # hold 150 W by adjusting the resistance
-    uv run ergometer.py --panel --profile vorgabe-hit.csv   # follow a power profile from a file
+    uv run ergometer.py --panel --profile profiles/vorgabe-hit.csv   # follow a power profile from a file
     uv run ergometer.py --raw           # also dump the vendor-specific raw data
     uv run ergometer.py --name FS-1837  # match on a different name fragment
     uv run ergometer.py --address <id>  # connect to a specific device
@@ -180,6 +180,7 @@ CONTROL = {"loop": None, "client": None, "range": None, "power_range": [0, MAX_T
            # The run that ended last, [start, end, profile name]: a panel that is loaded afterwards still shows it.
            "last_run": None}
 LOG_DIR = PANEL_HTML.parent / "logs"
+PROFILE_DIR = PANEL_HTML.parent / "profiles"
 # The panel for a phone in the same network: {"url", "qr"}; see start_panel().
 COMPANION = {}
 # QR code versions 1 to 6, which is plenty for a short address. Per error correction level:
@@ -404,8 +405,8 @@ def save_log():
 
 
 def profile_files() -> list[str]:
-    """The profiles offered in the panel: vorgabe-<name>.csv next to this program."""
-    return sorted(path.name for path in PANEL_HTML.parent.glob("vorgabe-*.csv"))
+    """The profiles offered in the panel: profiles/vorgabe-<name>.csv next to this program."""
+    return sorted(path.name for path in PROFILE_DIR.glob("vorgabe-*.csv"))
 
 
 def follow_profile():
@@ -586,7 +587,7 @@ class PanelHandler(BaseHTTPRequestHandler):
                 CONTROL["target_power"] = limit(request["power"])
                 print(f"{stamp()}  target power: {CONTROL['target_power']:g} W")
             elif self.path == "/profile" and request.get("name") in profile_files():
-                load_profile(request["name"], (PANEL_HTML.parent / request["name"]).read_text())
+                load_profile(request["name"], (PROFILE_DIR / request["name"]).read_text())
                 CONTROL["target_power"] = 0
                 print(f"{stamp()}  profile loaded: {request['name']}")
             elif self.path == "/profile" and request.get("name") == "":

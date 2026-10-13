@@ -26,6 +26,7 @@ from pathlib import Path
 from statistics import mean
 
 SMOOTH_SECONDS = 10  # the pulse curve is a moving average over this window
+CADENCE_SECONDS = 20  # and the cadence curve over this one
 EFFICIENCY = 0.25    # share of the energy turned over that reaches the pedals; as in training_log.csv
 WORK_SHARE = 0.8     # sections at this share of the highest target or more count as the hard ones
 OVERSHOOT = 1.2      # a peak this far above the target is worth a remark
@@ -39,16 +40,16 @@ def read_log(path: Path) -> list[dict]:
                 for row in csv.DictReader(file)]
 
 
-def smooth_pulse(rows: list[dict]) -> list[float | None]:
-    """The pulse as a centred moving average; None where the sensor delivered nothing."""
+def smooth(rows: list[dict], key: str, seconds: float, sensor: bool = False) -> list[float | None]:
+    """A column as a centred moving average. For a sensor that can drop out, zeros are no values: None there."""
     smoothed, first, last = [], 0, 0
     for row in rows:
-        while rows[first]["seconds"] < row["seconds"] - SMOOTH_SECONDS / 2:
+        while rows[first]["seconds"] < row["seconds"] - seconds / 2:
             first += 1
-        while last < len(rows) and rows[last]["seconds"] <= row["seconds"] + SMOOTH_SECONDS / 2:
+        while last < len(rows) and rows[last]["seconds"] <= row["seconds"] + seconds / 2:
             last += 1
-        window = [r["heart rate"] for r in rows[first:last] if r["heart rate"] > 0]
-        smoothed.append(round(mean(window), 1) if window and row["heart rate"] > 0 else None)
+        window = [r[key] for r in rows[first:last] if r[key] > 0 or not sensor]
+        smoothed.append(round(mean(window), 1) if window and (row[key] > 0 or not sensor) else None)
     return smoothed
 
 
@@ -83,19 +84,19 @@ def sections(rows: list[dict], offset: float) -> list[dict]:
 def analyse(paths: list[Path], temperature: float | None, betablocker: bool) -> dict:
     runs, parts, offset, previous_end = [], [], 0.0, None
     series = {"t": [], "power": [], "target": [], "pulse": [], "cadence": []}
-    levels, distance, speed, room = {}, 0.0, 0.0, []
+    levels, distance, speed, room, pedalling = {}, 0.0, 0.0, [], []
     for path in paths:
         rows = read_log(path)
         start = datetime.fromisoformat(rows[0]["time"])
         runs.append(summary(rows) | {"file": path.name, "start": rows[0]["time"][11:16], "offset": offset,
                                      "pause": (start - previous_end).total_seconds() if previous_end else None})
         parts += sections(rows, offset)
-        for row, beat in zip(rows, smooth_pulse(rows)):
+        for row, beat, cadence in zip(rows, smooth(rows, "heart rate", SMOOTH_SECONDS, sensor=True), smooth(rows, "cadence", CADENCE_SECONDS)):
             series["t"].append(round((offset + row["seconds"]) / 60, 3))
             series["power"].append(row["power"])
             series["target"].append(row["target"])
             series["pulse"].append(beat)
-            series["cadence"].append(row["cadence"])
+            series["cadence"].append(cadence)
         for key in series:  # a gap, so the curves of two logs are not joined
             series[key].append(None)
         for a, b in zip(rows, rows[1:]):
@@ -109,12 +110,12 @@ def analyse(paths: list[Path], temperature: float | None, betablocker: bool) -> 
         distance += sum(max(b.get("distance", 0) - a.get("distance", 0), 0) for a, b in zip(rows, rows[1:]))
         speed = max(speed, max(row.get("speed", 0) for row in rows))
         room += [row["room temperature"] for row in rows if row.get("room temperature")]
+        pedalling += [row["cadence"] for row in rows if row["cadence"] >= 40]  # the mean is taken from what was measured
         offset += rows[-1]["seconds"]
         previous_end = datetime.fromisoformat(rows[-1]["time"])
 
     work = sum(run["kj"] for run in runs)
     pulses = [run["pulse_max"] for run in runs if run["pulse_max"]]
-    pedalling = [value for value in series["cadence"] if value and value >= 40]
     top = max((part["target"] for part in parts), default=0)
     for i, part in enumerate(parts, 1):
         part.update(nr=i, work=part["target"] >= WORK_SHARE * top and len({p["target"] for p in parts}) > 1)
@@ -240,7 +241,7 @@ PAGE = """<!doctype html>
 <section class="card"><h2>Leistung im Verlauf</h2><div class="note">Ist und Vorgabe über die gefahrene Zeit</div><div class="plot" id="power"></div></section>
 <section class="pair">
   <div class="card"><h2>Puls im Verlauf</h2><div class="note">Gleitendes Mittel über __SMOOTH__ Sekunden</div><div class="plot low" id="pulse"></div></div>
-  <div class="card"><h2>Trittfrequenz im Verlauf</h2><div class="note">Umdrehungen pro Minute</div><div class="plot low" id="cadence"></div></div>
+  <div class="card"><h2>Trittfrequenz im Verlauf</h2><div class="note">Gleitendes Mittel über __CADENCE__ Sekunden</div><div class="plot low" id="cadence"></div></div>
 </section>
 <section class="card"><h2>Ist gegen Vorgabe je Abschnitt</h2><div class="note">Mittlere Leistung jedes Abschnitts mit gleicher Vorgabe, dazu der höchste Einzelwert</div><div class="plot" id="bars"></div></section>
 <section class="pair">
@@ -372,7 +373,7 @@ def main():
     first = read_log(paths[0])[0]["time"]
     date = f"{first[8:10]}.{first[5:7]}.{first[:4]}, {first[11:16]} Uhr"
     out = paths[0].with_name(paths[0].stem.replace("log-", "lauf-") + ".html")
-    out.write_text(PAGE.replace("__DATE__", date).replace("__SMOOTH__", str(SMOOTH_SECONDS)).replace("__OVERSHOOT__", str(OVERSHOOT))
+    out.write_text(PAGE.replace("__DATE__", date).replace("__SMOOTH__", str(SMOOTH_SECONDS)).replace("__CADENCE__", str(CADENCE_SECONDS)).replace("__OVERSHOOT__", str(OVERSHOOT))
                    .replace("__EFFICIENCY__", f"{EFFICIENCY * 100:.0f}").replace("__DATA__", json.dumps(result)))
 
     for run in result["runs"]:

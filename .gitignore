@@ -1,8 +1,6 @@
 __pycache__/
 .DS_Store
 logs/log-*csv
-logs/stufentest-*.html
-logs/stufentest-*.pdf
-logs/lauf-*.html
 .env
 /ergometer
+docs/AX4000-Handbuch-2007A.pdf

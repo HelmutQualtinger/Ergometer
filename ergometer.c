@@ -7,7 +7,7 @@
  *     ./ergometer --scan          # just list nearby BLE devices
  *     ./ergometer --panel         # also show a live Plotly panel in the browser
  *     ./ergometer --power 150     # hold 150 W by adjusting the resistance
- *     ./ergometer --panel --profile vorgabe-hit.csv   # follow a power profile from a file
+ *     ./ergometer --panel --profile profiles/vorgabe-hit.csv   # follow a power profile from a file
  *     ./ergometer --raw           # also dump the vendor-specific raw data
  *     ./ergometer --name FS-1837  # match on a different name fragment
  *     ./ergometer --address <id>  # connect to a specific device
@@ -329,7 +329,7 @@ static struct {
     } last_run;
 } CONTROL = {.power_range = {0, MAX_TARGET, 5}};
 
-static char PROGRAM_DIR[1024] = "."; /* panel.html, .env, the profiles and logs/ live next to the program */
+static char PROGRAM_DIR[1024] = "."; /* panel.html, .env, profiles/ and logs/ live next to the program */
 static bool RAW;
 
 static void lock(void) { pthread_mutex_lock(&LOCK); }
@@ -748,11 +748,11 @@ static void stop_profile(void) {
 
 static int compare_names(const void *a, const void *b) { return strcmp(*(char *const *)a, *(char *const *)b); }
 
-/* The profiles offered in the panel: vorgabe-<name>.csv next to this program. The caller frees them. */
+/* The profiles offered in the panel: profiles/vorgabe-<name>.csv next to this program. The caller frees them. */
 static int profile_files(char ***names) {
     int count = 0;
     *names = NULL;
-    DIR *directory = opendir(PROGRAM_DIR);
+    DIR *directory = opendir(program_file("profiles"));
     struct dirent *entry;
     while (directory && (entry = readdir(directory))) {
         size_t length = strlen(entry->d_name);
@@ -1122,7 +1122,9 @@ static void http_post(int connection, const char *path, const char *request) {
             printf("%s  target power: %g W\n", stamp(), CONTROL.target_power);
         }
     } else if (is_profile && known) {
-        char *text = read_file(program_file(name));
+        char file[300];
+        snprintf(file, sizeof file, "profiles/%s", name);
+        char *text = read_file(program_file(file));
         if (text && load_profile(name, text)) {
             CONTROL.target_power = 0;
             printf("%s  profile loaded: %s\n", stamp(), name);
@@ -1346,7 +1348,7 @@ static void on_data(const char *uuid, const uint8_t *data, size_t length) {
         for (int i = 0; i < FIELDS; i++)
             if (sample.present & 1u << i) print_value(&BIKE_FIELDS[i], sample.value[i]);
         printf("\n");
-    } else if (!strcmp(uuid, HEART_RATE) && length >= (data[0] & 1 ? 3u : 2u)) {
+    } else if (!strcmp(uuid, HEART_RATE) && length >= 2 && length >= (data[0] & 1 ? 3u : 2u)) {
         printf("%s", stamp());
         print_value(&BIKE_FIELDS[HEART], data[0] & 1 ? data[1] | data[2] << 8 : data[1]);
         printf("\n");

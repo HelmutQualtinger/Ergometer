@@ -7,6 +7,7 @@ Verbindet sich per Bluetooth LE mit einem Christopeit AX 4000 Ergometer, zeigt d
 - Zielleistung in Watt: das Programm stellt dazu die Widerstandsstufe des Ergometers nach der Watt-Tabelle ein
 - Leistungsvorgaben aus Dateien (Intervalle, Stufentest) und Aufzeichnung jeder Fahrt als CSV
 - Handy als Fernbedienung: QR-Code scannen, dann Vorgabe, Start und Stopp am Ergometer bedienen
+- Auswertung: Stufentest gegen Referenzdaten, Bericht je Fahrt und ein Kalender aller Einheiten, nach Intensität gefärbt
 
 ![Cockpit am Rechner mit QR-Code für das Handy](screenshot.png)
 
@@ -131,6 +132,7 @@ Der Mac steht meist nicht in Griffweite des Sattels. Das Handy am Lenker zeigt d
 | QR-Code zeigt `127.0.0.1` | Der Mac hatte beim Start kein Netz. WLAN verbinden und das Programm neu starten. |
 | QR-Code zeigt eine fremde Adresse | Ein VPN am Mac war beim Start aktiv. VPN trennen und das Programm neu starten. |
 | Kacheln da, Diagramme fehlen | Das Handy hat kein Internet; Plotly kommt von einem CDN. |
+| „Start“ gedrückt, aber die Werte stehen still | Das Ergometer ist nach einer Pause eingeschlafen und sendet nicht mehr; die Python-Version zeigt trotzdem „Connected“ und zeichnet nichts auf. Programm beenden, ein paar Umdrehungen treten und neu starten (die C-Version verbindet sich von selbst wieder). |
 
 ### Sicherheit
 
@@ -140,7 +142,7 @@ Der Mac steht meist nicht in Griffweite des Sattels. Das Handy am Lenker zeigt d
 
 ## Leistungsvorgabe aus einer Datei
 
-Das Menü „Vorgabe" im Cockpit bietet alle Dateien `vorgabe-<name>.csv` an, die im selben Verzeichnis wie das Programm liegen; neue Dateien erscheinen dort von selbst. „Start" beginnt das Profil, „Stopp" beendet es und schaltet die Regelung aus. Steht das Menü auf „manuell", beginnt „Start" eine Fahrt mit der Leistung, die der Schieber „Zielleistung" zeigt; der Schieber lässt sich während der Fahrt verstellen, ohne sie zu beenden. Während das Profil läuft, zeigt das Leistungsdiagramm die kommenden zwei Minuten als gepunktete weiße Linie. Rechts neben „Stopp" läuft ein Countdown bis zum nächsten Leistungswechsel, mit dem Wert, auf den es geht (z. B. „0:42 ↗ 150 W"). In den letzten 10 Sekunden piept es einmal pro Sekunde, beim Wechsel selbst einmal länger und höher. Der Knopf 🔔 oben rechts schaltet den Ton aus und ein; ein Browser spielt Ton erst, nachdem die Seite einmal angetippt oder angeklickt wurde. Wer den Schieber „Zielleistung" bewegt, übernimmt von Hand und hält das Profil an.
+Das Menü „Vorgabe" im Cockpit bietet alle Dateien `vorgabe-<name>.csv` an, die im Ordner `profiles` neben dem Programm liegen; neue Dateien erscheinen dort von selbst. „Start" beginnt das Profil, „Stopp" beendet es und schaltet die Regelung aus. Steht das Menü auf „manuell", beginnt „Start" eine Fahrt mit der Leistung, die der Schieber „Zielleistung" zeigt; der Schieber lässt sich während der Fahrt verstellen, ohne sie zu beenden. Während das Profil läuft, zeigt das Leistungsdiagramm die kommenden zwei Minuten als gepunktete weiße Linie. Rechts neben „Stopp" läuft ein Countdown bis zum nächsten Leistungswechsel, mit dem Wert, auf den es geht (z. B. „0:42 ↗ 150 W"). In den letzten 10 Sekunden piept es einmal pro Sekunde, beim Wechsel selbst einmal länger und höher. Der Knopf 🔔 oben rechts schaltet den Ton aus und ein; ein Browser spielt Ton erst, nachdem die Seite einmal angetippt oder angeklickt wurde. Wer den Schieber „Zielleistung" bewegt, übernimmt von Hand und hält das Profil an.
 
 Die Datei hat zwei Spalten, Zeit (`mm:ss`) und Watt, getrennt durch Komma, Semikolon oder Tabulator. Jede Zeile gilt ab ihrer Zeit bis zur nächsten; eine letzte Zeile mit 0 Watt beendet das Profil. Eine Kopfzeile ist erlaubt.
 
@@ -152,12 +154,14 @@ zeit,watt
 25:00,0
 ```
 
-Mitgeliefert sind sieben Profile:
+Mitgeliefert sind zehn Profile:
 
 - `vorgabe-hit.csv` (25 Minuten): 21 Zyklen aus 15 Sekunden bei 200 W und 45 Sekunden bei 100 W, davor und danach 2 Minuten bei 80 W
 - `vorgabe-hiit-20.csv` (20 Minuten): 12 Runden aus 30 Sekunden bei 230 W und 30 Sekunden bei 80 W, davor 4 Minuten bei 100 W, danach 4 Minuten bei 80 W
 - `vorgabe-intervall-1-3.csv` (24 Minuten): 5 Zyklen aus 1 Minute bei 200 W und 3 Minuten bei 100 W, davor und danach 2 Minuten bei 80 W
 - `vorgabe-sprint-30-60.csv` (19 Minuten): 10 Zyklen aus 30 Sekunden bei 250 W und 60 Sekunden bei 90 W, davor 2 Minuten bei 100 W, danach 2 Minuten bei 80 W
+- `vorgabe-sprint-20-40.csv` (24 Minuten): 4 Blöcke aus je 4 Zyklen mit 20 Sekunden bei 250 W und 40 Sekunden bei 125 W, nach jedem Block 1 Minute bei 100 W, davor 2 Minuten bei 100 W, danach 2 Minuten bei 80 W
+- `vorgabe-roennestad-30-15.csv` (32:30 Minuten): Mikrointervalle nach Rønnestad, 2 Serien aus je 13 Zyklen mit 30 Sekunden bei 240 W und 15 Sekunden bei 120 W (120 % und 60 % einer FTP von 200 W), dazwischen 3 Minuten bei 100 W, davor 4 Minuten bei 100 W und 2 Minuten bei 150 W, danach 4:30 Minuten bei 80 W
 - `vorgabe-persoenlich-30.csv` (30 Minuten): 3 Blöcke von 5 Minuten bei 200 W mit 2 Minuten bei 120 W dazwischen, 6 Minuten Einfahren in drei Stufen, 5 Minuten Ausfahren; aus einem Stufentest abgeleitet (85 % von 236 W)
 - `vorgabe-stufen-4x.csv` (30 Minuten): 4 Durchgänge mit stufenweisem Anstieg über 120, 150, 180 und 210 W (je 90 Sekunden), davor und danach 3 Minuten bei 100 W; aus einem Stufentest abgeleitet (51 bis 89 % von 236 W)
 - `vorgabe-stufen-4x-230.csv` (30 Minuten): wie `stufen-4x`, die oberste Stufe aber bei 230 statt 210 W
@@ -189,9 +193,26 @@ python3 lauf.py logs/log-A.csv logs/log-B.csv     # mehrere Aufzeichnungen als e
 python3 lauf.py --training --note "HIIT 12x(30:30)" --rr 126/83/87
 ```
 
-Das schreibt neben die erste Datei `lauf-<jj-mm-tt-hh-mm-ss>.html`: Kennzahlen, Beobachtungen (z. B. Abschnitte, die über die Vorgabe schossen), Leistung, Puls und Trittfrequenz im Verlauf, die mittlere Leistung jedes Abschnitts gegen seine Vorgabe und Tabellen dazu. Lücken zwischen mehreren Aufzeichnungen sind markiert.
+Das schreibt neben die erste Datei `lauf-<jj-mm-tt-hh-mm-ss>.html`: Kennzahlen, Beobachtungen (z. B. Abschnitte, die über die Vorgabe schossen), Leistung, Puls und Trittfrequenz im Verlauf (Puls und Trittfrequenz als gleitendes Mittel), die mittlere Leistung jedes Abschnitts gegen seine Vorgabe und Tabellen dazu. Lücken zwischen mehreren Aufzeichnungen sind markiert.
 
 Mit `--training` wird die Fahrt zusätzlich in `~/training/training_log.csv` eingetragen, samt Distanz, Trittfrequenz, Spitzenleistung, Höchstgeschwindigkeit und Temperatur – also den Spalten, die sonst aus einer Kinomap-Zusammenfassung kommen. Eine Fahrt, die schon im Log steht, wird nicht doppelt eingetragen. Die Raumtemperatur steht in neueren Aufzeichnungen selbst; für ältere gibt es `--temperature`. In Claude Code erledigt der Skill `lauf` dasselbe.
+
+## Kinomap-Fahrt ansehen
+
+```
+python3 kinomap.py ~/training/cern.zip --betablocker
+```
+
+`kinomap.py` liest den Export einer Kinomap-Aktivität (das Zip mit `.csv`, `.tcx`, `.gpx` und `.pwx`) und schreibt `logs/kinomap-<jj-mm-tt-hh-mm-ss>.html`: Kennzahlen samt Normalized Power, Beobachtungen, Leistung gegen die FTP, Puls, Trittfrequenz, Geschwindigkeit und Höhe im Verlauf, die mittlere Leistung je fünf Minuten, die beste mittlere Leistung je Dauer und die Zeit in den Intensitätsstufen des Kalenders. Eine solche Fahrt hat keine Vorgabe, deshalb fehlt der Vergleich von Ist und Soll. Ins Trainingslog trägt das Programm nichts ein; es zeigt nur die Zeile, die dort schon steht. `--ftp` ändert die Bezugsleistung (200 W).
+
+## Trainingskalender
+
+```
+python3 kalender.py            # schreibt logs/index.html
+python3 kalender.py --ftp 210  # andere Bezugsleistung
+```
+
+`kalender.py` liest `~/training/training_log.csv` und zeigt alle Einheiten als Monatskalender. Die Farbe eines Tages steht für seine mittlere Leistung als Anteil der FTP (200 W, fünf Stufen von „unter 70 %" bis „ab 100 %", von Grün über Gelb, Orange und Rot bis Violett: Grün für leichte, Violett für harte Tage); die Knöpfe darüber färben stattdessen nach Kalorien oder Dauer. Eine kleine Zahl in der Ecke nennt die Zahl der Einheiten, wenn es an einem Tag mehrere waren. Ein Klick auf einen Tag zeigt seine Einheiten als Tabelle. Bei Einheiten, die mit diesem Programm aufgezeichnet wurden, führt die Spalte „Auswertung" zur Seite von `lauf.py` und, bei einem Stufentest, von `stufentest.py`, bei einer Kinomap-Fahrt zur Seite von `kinomap.py`; zugeordnet wird über Datum, Kalorien und Dauer. Die Seite ist eine Momentaufnahme: Nach einem neu abgelegten Lauf das Programm noch einmal aufrufen.
 
 ## Zielleistung und Regelung
 
@@ -219,5 +240,7 @@ Die Abstimmung steht als Konstanten oben in `ergometer.py`:
 
 - Die Messwerte kommen über den Bluetooth-Standard FTMS (Fitness Machine Service, `0x1826`), Merkmal „Indoor Bike Data" (`0x2AD2`).
 - Der Widerstand wird über den „Fitness Machine Control Point" (`0x2AD9`) gesetzt. Das AX 4000 landet dabei teils eine Stufe neben dem angeforderten Wert; das Programm liest die gemeldete Stufe zurück und korrigiert.
+- Im AX 4000 steckt ein Bluetooth-Modul von FITSHOW (Modell `FS-BT-D2`, Software 1.2.7). Es meldet 24 Widerstandsstufen und als Leistungsbereich 10 bis 240 W; diese Angabe ist Byte für Byte dieselbe wie der Widerstandsbereich und keine echte Grenze. Es meldet auch „Zielleistung" als unterstützt, ignoriert sie aber – deshalb regelt das Programm selbst.
+- Die Watt-Tabelle steht in der Montage- und Bedienungsanleitung (Bestell-Nr. 2007A, Seite 9), die der Hersteller auf der [Produktseite](https://www.christopeit-sport.com/ergometer-ax-4000/30-2007a) zum Herunterladen anbietet. Sie endet bei 80 U/min; eine höchste zulässige Trittfrequenz nennt die Anleitung nicht.
 - `ergometer.py` enthält Bluetooth-Anbindung, Leistungsregelung und einen kleinen HTTP-Server; `panel.html` ist das Cockpit und holt die Daten jede Sekunde vom Server.
-- Den QR-Code erzeugt das Programm selbst, ohne zusätzliche Bibliothek: Byte-Modus, Versionen 1–6, Fehlerkorrektur Q (bis etwa 25 % beschädigte Daten bleiben lesbar). Die Stufe steht als `QR_LEVEL` oben in `ergometer.py` (L, M, Q oder H).
+- Den QR-Code erzeugt das Programm selbst, ohne zusätzliche Bibliothek: Byte-Modus, Versionen 1–6, Fehlerkorrektur H (bis etwa 30 % beschädigte Daten bleiben lesbar). Die Stufe steht als `QR_LEVEL` oben in `ergometer.py` (L, M, Q oder H).
