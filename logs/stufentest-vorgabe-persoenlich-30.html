@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vorgabe persönlich 30</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  :root { color-scheme: light dark; --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+          --grid: #e1e0d9; --axis: #c3c2b7; --series-1: #2a78d6; --series-2: #eb6834; }
+  @media (prefers-color-scheme: dark) { :root { --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --grid: #2c2c2a;
+          --axis: #383835; --series-1: #3987e5; --series-2: #d95926; } }
+  body { margin: 0; padding: 20px 16px 40px; background: var(--page); color: var(--ink); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0; } h2 { font-size: 16px; margin: 0 0 2px; }
+  .sub { color: var(--ink-2); margin: 2px 0 16px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 10px; }
+  .card { background: var(--surface); border: 1px solid var(--grid); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+  .tiles .card { margin: 0; }
+  .label, .note { color: var(--ink-2); font-size: 13px; }
+  .value { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; } .value small { font-size: 14px; font-weight: 400; color: var(--ink-2); }
+  .plot { height: 320px; } .plot.low { height: 230px; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th { color: var(--ink-2); font-weight: 600; font-size: 13px; } th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  li { margin-bottom: 6px; }
+</style></head><body><main>
+<h1>Persönliche Vorgabe über 30 Minuten</h1>
+<p class="sub">vorgabe-persoenlich-30.csv · abgeleitet aus dem Stufentest vom 08.10.2026 (maximale Leistung 236 W, Betablocker)</p>
+<section class="tiles" id="tiles"></section>
+<section class="card"><h2>Leistungsvorgabe</h2><div class="note">Zielleistung über die Zeit; die gestrichelten Linien zeigen deine höchste volle Stufe und deine maximale Leistung im Stufentest.</div><div class="plot" id="power"></div></section>
+<section class="card"><h2>Erwarteter Puls</h2><div class="note" id="pulse-note"></div><div class="plot low" id="pulse"></div></section>
+<section class="card"><h2>Abschnitte</h2><div class="scroll"><table id="rows"></table></div></section>
+<section class="card"><h2>Wie die Werte zustande kommen</h2><ul id="why"></ul></section>
+</main><script>
+const D = {"rows": [{"start": 0, "end": 120, "watt": 100, "phase": "Einfahren", "share": 0.423728813559322, "zone": "Erholung", "pulse": 99.0}, {"start": 120, "end": 240, "watt": 130, "phase": "Einfahren", "share": 0.5508474576271186, "zone": "Grundlage", "pulse": 104.00999999999999}, {"start": 240, "end": 360, "watt": 165, "phase": "Einfahren", "share": 0.6991525423728814, "zone": "Grundlage", "pulse": 109.855}, {"start": 360, "end": 660, "watt": 200, "phase": "Belastung 1", "share": 0.847457627118644, "zone": "Schwelle", "pulse": 115.69999999999999}, {"start": 660, "end": 780, "watt": 120, "phase": "Erholung", "share": 0.5084745762711864, "zone": "Erholung", "pulse": 102.34}, {"start": 780, "end": 1080, "watt": 200, "phase": "Belastung 2", "share": 0.847457627118644, "zone": "Schwelle", "pulse": 115.69999999999999}, {"start": 1080, "end": 1200, "watt": 120, "phase": "Erholung", "share": 0.5084745762711864, "zone": "Erholung", "pulse": 102.34}, {"start": 1200, "end": 1500, "watt": 200, "phase": "Belastung 3", "share": 0.847457627118644, "zone": "Schwelle", "pulse": 115.69999999999999}, {"start": 1500, "end": 1620, "watt": 130, "phase": "Ausfahren", "share": 0.5508474576271186, "zone": "Grundlage", "pulse": 104.00999999999999}, {"start": 1620, "end": 1800, "watt": 100, "phase": "Ausfahren", "share": 0.423728813559322, "zone": "Erholung", "pulse": 99.0}], "p_max": 236, "full_stage": 225, "total": 1800, "mean": 161.0, "kj": 289.8, "kcal": 276.98924731182797, "work": 900};
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const n = (value, digits = 0) => value.toLocaleString("de-DE", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+const clock = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+const work = D.rows.filter((r) => r.phase.startsWith("Belastung"));
+document.getElementById("tiles").innerHTML = [
+  ["Dauer", clock(D.total), "min", `${clock(D.work)} min davon Belastung`],
+  ["Belastung", `${work.length} × ${n((work[0].end - work[0].start) / 60)}`, "min", `bei ${work[0].watt} W, ${n(work[0].share * 100)} % deiner maximalen Leistung`],
+  ["Durchschnitt", n(D.mean), "W", `${n(D.mean / D.p_max * 100)} % deiner maximalen Leistung`],
+  ["Arbeit", n(D.kj), "kJ", `etwa ${n(D.kcal)} kcal bei 25 % Wirkungsgrad`],
+].map(([label, value, unit, note]) => `<div class="card"><div class="label">${label}</div><div class="value">${value} <small>${unit}</small></div><div class="note">${note}</div></div>`).join("");
+document.getElementById("pulse-note").textContent =
+  "Aus deiner Ausgleichsgerade im Stufentest (Puls = 82,3 + 0,167 × Leistung) für den eingeschwungenen Zustand. Der echte Puls folgt jeder Stufe mit ein bis zwei Minuten Verzögerung, und die Gerade gilt nur, solange Medikament und Dosis gleich bleiben.";
+document.getElementById("rows").innerHTML = "<tr><th>Zeit</th><th>Abschnitt</th><th>Dauer</th><th>Leistung</th><th>Anteil an 236 W</th><th>Bereich</th><th>Erwarteter Puls</th></tr>" +
+  D.rows.map((r) => `<tr><td>${clock(r.start)}–${clock(r.end)}</td><td>${r.phase}</td><td>${clock(r.end - r.start)}</td><td>${r.watt} W</td><td>${n(r.share * 100)} %</td><td>${r.zone}</td><td>${n(r.pulse)} bpm</td></tr>`).join("");
+document.getElementById("why").innerHTML = [
+  `<b>Belastung bei 200 W (85 %).</b> Das ist der Schwellenbereich, 80 bis 90 % der maximalen Leistung aus einem Test mit 3-Minuten-Stufen. Im Stufentest bist du 200 W und 225 W jeweils volle drei Minuten gefahren; die Vorgabe bleibt eine Stufe unter deiner höchsten vollen Stufe und verlangt sie dafür dreimal fünf Minuten.`,
+  `<b>Erholung bei 120 W (51 %).</b> Zwei Minuten locker treten zwischen den Blöcken, lang genug zum Durchatmen, kurz genug, dass die Einheit in 30 Minuten passt.`,
+  `<b>Einfahren in drei Stufen.</b> 100, 130 und 165 W über sechs Minuten, damit die erste Belastung nicht aus dem Stand kommt. Ausfahren über fünf Minuten zurück auf 100 W.`,
+  `<b>Gesteuert wird über die Leistung, nicht über den Puls.</b> Unter Betablocker steigt dein Puls kaum (4 Schläge je 25 W), als Steuergröße ist er zu unempfindlich. Der erwartete Puls dient nur zur Kontrolle: Liegt er bei 200 W deutlich über 116 bpm, ist das ein schlechter Tag.`,
+  `<b>Vorsichtig angesetzt.</b> Der Stufentest lief um Mitternacht nach zwei Einheiten; ausgeruht liegt deine maximale Leistung vermutlich höher. Wenn dir die drei Blöcke leichtfallen, ist der nächste Schritt 210 W oder ein vierter Block, nicht beides zugleich.`,
+].map((t) => `<li>${t}</li>`).join("");
+
+function draw() {
+  const ink = css("--ink-2"), s1 = css("--series-1"), s2 = css("--series-2"), surface = css("--surface"), strong = css("--ink");
+  const axis = { gridcolor: css("--grid"), linecolor: css("--axis"), zeroline: false, tickfont: { color: css("--muted"), size: 12 } };
+  const minutes = { ...axis, title: { text: "Zeit (min)", font: { color: ink, size: 13 } }, showgrid: false, range: [0, D.total / 60], dtick: 5 };
+  const base = { margin: { l: 52, r: 16, t: 10, b: 44 }, paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)", showlegend: false,
+                 font: { family: getComputedStyle(document.body).fontFamily, color: ink }, hovermode: "x unified",
+                 hoverlabel: { bgcolor: surface, bordercolor: css("--axis"), font: { color: strong } } };
+  const xs = [...D.rows.map((r) => r.start / 60), D.total / 60];
+  const line = (y, label, side) => ({ shapes: [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: y, y1: y, line: { color: css("--muted"), width: 1, dash: "dash" } }],
+                                      annotations: [{ xref: "paper", x: 1, xanchor: "right", y, yanchor: side, text: label, showarrow: false, font: { color: ink, size: 12 } }] });
+  // The two lines are close together, so one label sits above its line and the other below.
+  const marks = [line(D.full_stage, "höchste volle Stufe 225 W", "top"), line(D.p_max, "maximale Leistung 236 W", "bottom")];
+  // Each work block carries its target as a label, so the chart reads without the table.
+  const labels = D.rows.map((r) => ({ x: (r.start + r.end) / 120, y: r.watt, yanchor: "bottom", text: `${r.watt} W`, showarrow: false, font: { color: strong, size: 12 } }));
+  Plotly.react("power", [{ x: xs, y: [...D.rows.map((r) => r.watt), D.rows[D.rows.length - 1].watt], mode: "lines", line: { color: s1, width: 2, shape: "hv" },
+                           fill: "tozeroy", fillcolor: s1 + "26", hovertemplate: "%{y} W<extra></extra>" }],
+    { ...base, xaxis: minutes, yaxis: { ...axis, title: { text: "Leistung (W)", font: { color: ink, size: 13 } }, range: [0, 260] },
+      shapes: marks.flatMap((m) => m.shapes), annotations: [...marks.flatMap((m) => m.annotations), ...labels] }, { displayModeBar: false, responsive: true });
+  Plotly.react("pulse", [{ x: xs, y: [...D.rows.map((r) => r.pulse), D.rows[D.rows.length - 1].pulse], mode: "lines", line: { color: s2, width: 2, shape: "hv" },
+                           hovertemplate: "%{y:.0f} bpm<extra></extra>" }],
+    { ...base, xaxis: minutes, yaxis: { ...axis, title: { text: "Puls (bpm)", font: { color: ink, size: 13 } }, range: [95, 125] } }, { displayModeBar: false, responsive: true });
+}
+draw();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+</script></body></html>
