@@ -62,7 +62,7 @@ uv run ergometer.py --panel
 
 Das Programm sucht das Ergometer, verbindet sich und öffnet das Cockpit unter http://127.0.0.1:8050/. Im Terminal stehen dazu die Adresse für das Handy und ihr QR-Code. Beenden mit Ctrl+C; eine laufende Aufzeichnung wird dabei gespeichert.
 
-Das Ergometer nimmt nur eine Bluetooth-Verbindung gleichzeitig an: Vor dem Start andere Apps (z. B. Kinomap) trennen und ein paar Umdrehungen treten, damit es aufwacht. Findet das Programm das Ergometer beim Start nicht, sucht es noch fünfmal im Abstand von einer Minute und beendet sich erst dann. Aus demselben Grund kann das Programm nur einmal laufen; ein zweiter Start scheitert mit `Address already in use`.
+Das Ergometer nimmt nur eine Bluetooth-Verbindung gleichzeitig an: Vor dem Start andere Apps (z. B. Kinomap) trennen und ein paar Umdrehungen treten, damit es aufwacht. Findet das Programm das Ergometer beim Start nicht, sucht es alle 30 Sekunden erneut, bis es da ist; das Cockpit läuft in der Zeit schon. Aus demselben Grund kann das Programm nur einmal laufen; ein zweiter Start scheitert mit `Address already in use`.
 
 ## C-Version
 
@@ -74,7 +74,7 @@ make
 ./ergometer --panel
 ```
 
-Bluetooth läuft über CoreBluetooth und steckt in `ble_macos.m` (Objective-C, weil macOS dafür keine C-Schnittstelle hat); die C-Version läuft deshalb nur auf dem Mac. Anders als die Python-Version beendet sie sich nicht, wenn das Ergometer nach einer Pause einschläft: Sie speichert eine laufende Aufzeichnung, meldet „Ergometer disconnected“ und verbindet sich von selbst wieder, sobald jemand tritt. Es kann immer nur eines der beiden Programme laufen – das Ergometer nimmt eine Verbindung an, und beide benutzen Port 8050.
+Bluetooth läuft über CoreBluetooth und steckt in `ble_macos.m` (Objective-C, weil macOS dafür keine C-Schnittstelle hat); die C-Version läuft deshalb nur auf dem Mac. Wie die Python-Version beendet sie sich nicht, wenn das Ergometer abgeschaltet wird: Beide speichern eine laufende Aufzeichnung, melden „Ergometer disconnected“ und verbinden sich von selbst wieder, sobald es zurück ist. Nur die C-Version merkt außerdem, wenn das Ergometer nach einer Pause einschläft, ohne die Verbindung zu trennen. Es kann immer nur eines der beiden Programme laufen – das Ergometer nimmt eine Verbindung an, und beide benutzen Port 8050.
 
 ## Optionen
 

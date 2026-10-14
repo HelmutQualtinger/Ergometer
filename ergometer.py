@@ -50,8 +50,7 @@ LEVEL_SETTLE = 2    # s; after a change of level within a target the rider gets 
 MIN_CADENCE = 20    # rpm; below this the rider has stopped and the level is held
 MAX_TARGET = 300    # W; as far as the slider for the target power goes
 
-CONNECT_RETRIES = 5  # further searches at the start before the program gives up
-RETRY_PAUSE = 60     # s between those searches
+RETRY_PAUSE = 30  # s between searches while the ergometer is not there; the program keeps searching
 
 # The AX 4000 advertises under its FitShow module name, e.g. "FS-1837D8".
 # The room temperature comes from a sensor that publishes JSON telemetry over MQTT. Where the
@@ -466,7 +465,7 @@ async def power_control():
         follow_profile()
         target = CONTROL["target_power"]
         recent = [s for s in SAMPLES[-8:] if "cadence" in s and "resistance" in s]  # about two seconds
-        if not target or not recent or time.time() * 1000 - recent[-1]["t"] > 3000:
+        if not target or not recent or not CONTROL["range"] or time.time() * 1000 - recent[-1]["t"] > 3000:
             last_target = 0
             continue
         cadence = sum(s["cadence"] for s in recent) / len(recent)
@@ -652,7 +651,7 @@ async def scan(timeout: float):
     return sorted(found.values(), key=lambda pair: pair[1].rssi, reverse=True)
 
 
-async def find_ergometer(args):
+async def find_ergometer(args, quiet=False):
     set_status(f"Scanning for {args.timeout:.0f} s ...")
     devices = await scan(args.timeout)
     hints = (args.name.lower(),) if args.name else NAME_HINTS
@@ -671,6 +670,8 @@ async def find_ergometer(args):
             return device
 
     set_status("Ergometer not found")
+    if quiet:
+        return None
     print("Nearby devices:")
     print_devices(devices)
     print("\nWake the ergometer (pedal a few turns), make sure no phone/app is connected to it,")
@@ -698,84 +699,110 @@ async def run(args):
         load_profile(Path(args.profile).name, Path(args.profile).read_text())
     if args.panel:
         start_panel(args.port)
-    for retry in range(CONNECT_RETRIES + 1):
-        if retry:
-            set_status(f"Ergometer not found, retry {retry} of {CONNECT_RETRIES} in {RETRY_PAUSE} s")
-            await asyncio.sleep(RETRY_PAUSE)
-        device = await find_ergometer(args)
-        if device:
-            break
-    else:
-        return
+    # Search until the ergometer is there: switched off, asleep, out of range or held by another
+    # app, it is simply searched for again; Bluetooth that is off counts the same. After a lost
+    # connection the searches follow each other, before the first one they are RETRY_PAUSE apart.
+    again = False
+    while True:
+        try:
+            device = await find_ergometer(args, quiet=again)
+            if device:
+                await connected_session(args, device, again)
+                again = True
+                continue
+        except Exception as exc:  # whatever Bluetooth reports, search again
+            print(f"{stamp()}  ergometer not reachable: {exc!r}")
+        if again:
+            await asyncio.sleep(2)
+            continue
+        set_status(f"Ergometer not found, next search in {RETRY_PAUSE} s")
+        await asyncio.sleep(RETRY_PAUSE)
 
+
+async def connected_session(args, device, again: bool):
+    """Connect and stay until the connection is lost; the run then ends as it does with "Stop"."""
     disconnected = asyncio.Event()
     set_status(f"Connecting to {device.name or '(no name)'} [{device.address}] ...")
     async with BleakClient(device, disconnected_callback=lambda _: disconnected.set()) as client:
-        set_status(f"Connected to {device.name or device.address}")
+        try:
+            await serve_session(args, device, client, again)
+            await disconnected.wait()
+        finally:
+            # What was recorded is saved, and nothing drives the resistance when the ergometer is back.
+            CONTROL.update(range=None, client=None)
+            manual = CONTROL["profile"] and not CONTROL["profile"]["steps"]
+            stop_profile()
+            CONTROL["target_power"] = 0
+            if manual:
+                CONTROL["profile"] = None
+            set_status("Ergometer disconnected - pedal to wake it")
+
+
+async def serve_session(args, device, client, again: bool):
+    set_status(f"Connected to {device.name or device.address}")
+    if not again:
         print("Services:")
-        notifiable = []
-        for service in client.services:
+    notifiable = []
+    for service in client.services:
+        if not again:
             print(f"  {service.uuid}  {service.description}")
-            for char in service.characteristics:
+        for char in service.characteristics:
+            if not again:
                 print(f"    {char.uuid}  {','.join(char.properties):<28} {char.description}")
-                if "notify" in char.properties or "indicate" in char.properties:
-                    notifiable.append(char)
+            if "notify" in char.properties or "indicate" in char.properties:
+                notifiable.append(char)
 
-        def on_data(char, data: bytearray):
-            if char.uuid == CONTROL_POINT and not args.raw:
-                # Response: 0x80, request opcode, result (1 = success).
-                if len(data) >= 3 and data[2] != 1:
-                    print(f"{stamp()}  ergometer rejected command 0x{data[1]:02x} (result {data[2]})")
-                return
-            parser = PARSERS.get(char.uuid)
-            if parser:
-                try:
-                    values = parser(bytes(data))
-                    if char.uuid == INDOOR_BIKE_DATA:
-                        sample = {"t": time.time() * 1000, "target": CONTROL["target_power"] or None,
-                                  **{k: v for k, (v, _) in values.items()}}
-                        if time.time() - ROOM["t"] < 120:
-                            sample["room temperature"] = ROOM["temperature"]  # goes into the log with the ride
-                        SAMPLES.append(sample)
-                    print(f"{stamp()}  " + "  ".join(f"{k}: {format_value(*v)}" for k, v in values.items()))
-                    return
-                except (struct.error, IndexError):
-                    pass
-            # Unknown or unparseable characteristic: show the raw bytes.
-            if args.raw:
-                print(f"{stamp()}  {char.uuid[4:8]} raw: {data.hex(' ')}")
-
-        has_bike_data = any(char.uuid == INDOOR_BIKE_DATA for char in notifiable)
-        if not has_bike_data:
-            print("\nNo standard FTMS Indoor Bike Data characteristic - showing raw data only.")
-            args.raw = True
-        for char in notifiable:
-            if not args.raw and char.uuid not in PARSERS and char.uuid != CONTROL_POINT:
-                continue
+    def on_data(char, data: bytearray):
+        if char.uuid == CONTROL_POINT and not args.raw:
+            # Response: 0x80, request opcode, result (1 = success).
+            if len(data) >= 3 and data[2] != 1:
+                print(f"{stamp()}  ergometer rejected command 0x{data[1]:02x} (result {data[2]})")
+            return
+        parser = PARSERS.get(char.uuid)
+        if parser:
             try:
-                await client.start_notify(char, on_data)
-            except Exception as exc:
-                print(f"  could not subscribe to {char.uuid}: {exc}")
+                values = parser(bytes(data))
+                if char.uuid == INDOOR_BIKE_DATA:
+                    sample = {"t": time.time() * 1000, "target": CONTROL["target_power"] or None,
+                              **{k: v for k, (v, _) in values.items()}}
+                    if time.time() - ROOM["t"] < 120:
+                        sample["room temperature"] = ROOM["temperature"]  # goes into the log with the ride
+                    SAMPLES.append(sample)
+                print(f"{stamp()}  " + "  ".join(f"{k}: {format_value(*v)}" for k, v in values.items()))
+                return
+            except (struct.error, IndexError):
+                pass
+        # Unknown or unparseable characteristic: show the raw bytes.
+        if args.raw:
+            print(f"{stamp()}  {char.uuid[4:8]} raw: {data.hex(' ')}")
 
-        uuids = {char.uuid for service in client.services for char in service.characteristics}
-        if {CONTROL_POINT, RESISTANCE_RANGE} <= uuids:
-            low, high, step = struct.unpack("<hhH", await client.read_gatt_char(RESISTANCE_RANGE))
-            await client.write_gatt_char(CONTROL_POINT, b"\x00", response=True)  # request control
-            CONTROL.update(loop=asyncio.get_running_loop(), client=client,
-                           range=[low / 10, high / 10, (step or 10) / 10])
-            if POWER_RANGE in uuids:
-                low, high, step = struct.unpack("<hhH", await client.read_gatt_char(POWER_RANGE))
-                CONTROL["power_range"] = [0, MAX_TARGET, max(step, 5)]  # the ergometer's own limit is not ours: the program sets levels
-            if args.profile:
-                start_profile()  # a profile from the command line starts on connect
+    has_bike_data = any(char.uuid == INDOOR_BIKE_DATA for char in notifiable)
+    if not has_bike_data:
+        print("\nNo standard FTMS Indoor Bike Data characteristic - showing raw data only.")
+        args.raw = True
+    for char in notifiable:
+        if not args.raw and char.uuid not in PARSERS and char.uuid != CONTROL_POINT:
+            continue
+        try:
+            await client.start_notify(char, on_data)
+        except Exception as exc:
+            print(f"  could not subscribe to {char.uuid}: {exc}")
+
+    uuids = {char.uuid for service in client.services for char in service.characteristics}
+    if {CONTROL_POINT, RESISTANCE_RANGE} <= uuids:
+        low, high, step = struct.unpack("<hhH", await client.read_gatt_char(RESISTANCE_RANGE))
+        await client.write_gatt_char(CONTROL_POINT, b"\x00", response=True)  # request control
+        CONTROL.update(loop=asyncio.get_running_loop(), client=client,
+                       range=[low / 10, high / 10, (step or 10) / 10])
+        if POWER_RANGE in uuids:
+            low, high, step = struct.unpack("<hhH", await client.read_gatt_char(POWER_RANGE))
+            CONTROL["power_range"] = [0, MAX_TARGET, max(step, 5)]  # the ergometer's own limit is not ours: the program sets levels
+        if args.profile and not again:
+            start_profile()  # a profile from the command line starts on the first connect
+        if not CONTROL.get("task"):
             CONTROL["task"] = asyncio.create_task(power_control())
 
-        print("\nReceiving data, start pedalling. Press Ctrl+C to stop.\n")
-        await disconnected.wait()
-        CONTROL["range"] = None
-        save_log()
-        set_status("Ergometer disconnected")
-
+    print("\nReceiving data, start pedalling. Press Ctrl+C to stop.\n")
 
 def main():
     parser = argparse.ArgumentParser(description="Show live values from a Christopeit AX 4000 ergometer.")

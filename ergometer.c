@@ -61,8 +61,7 @@
 #define MIN_CADENCE 20    /* rpm; below this the rider has stopped and the level is held */
 #define MAX_TARGET 300    /* W; as far as the slider for the target power goes */
 
-#define CONNECT_RETRIES 5 /* further searches at the start before the program gives up */
-#define RETRY_PAUSE 60    /* s between those searches */
+#define RETRY_PAUSE 30 /* s between searches while the ergometer is not there; the program keeps searching */
 
 /* The room temperature comes from a sensor that publishes JSON telemetry over MQTT. Where the
  * broker is stays out of the repository: MQTT_HOST, MQTT_PORT and MQTT_TOPIC come from the
@@ -1399,10 +1398,10 @@ static void run(void) {
         free(text);
     }
     if (ARGS.panel) start_panel(ARGS.port, true);
-    /* The first searches decide whether there is an ergometer at all. Once it was connected,
-     * a lost connection is searched for again until it is back or the program is stopped. */
+    /* Search until the ergometer is there, and after a lost connection until it is back. Before the
+     * first connection the searches are RETRY_PAUSE apart, afterwards they follow each other. */
     bool again = false;
-    for (int retry = 0;;) {
+    for (;;) {
         const ble_device *device = find_ergometer(again);
         if (device && connected_session(device, again)) {
             again = true;
@@ -1412,8 +1411,7 @@ static void run(void) {
             sleep_for(2);
             continue;
         }
-        if (++retry > CONNECT_RETRIES) return;
-        set_status("Ergometer not found, retry %d of %d in %d s", retry, CONNECT_RETRIES, RETRY_PAUSE);
+        set_status("Ergometer not found, next search in %d s", RETRY_PAUSE);
         sleep_for(RETRY_PAUSE);
     }
 }
