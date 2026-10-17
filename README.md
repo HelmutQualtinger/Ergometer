@@ -154,7 +154,7 @@ zeit,watt
 25:00,0
 ```
 
-Mitgeliefert sind zehn Profile:
+Mitgeliefert sind elf Profile:
 
 - `vorgabe-hit.csv` (25 Minuten): 21 Zyklen aus 15 Sekunden bei 200 W und 45 Sekunden bei 100 W, davor und danach 2 Minuten bei 80 W
 - `vorgabe-hiit-20.csv` (20 Minuten): 12 Runden aus 30 Sekunden bei 230 W und 30 Sekunden bei 80 W, davor 4 Minuten bei 100 W, danach 4 Minuten bei 80 W
@@ -163,6 +163,7 @@ Mitgeliefert sind zehn Profile:
 - `vorgabe-sprint-20-40.csv` (24 Minuten): 4 Blöcke aus je 4 Zyklen mit 20 Sekunden bei 250 W und 40 Sekunden bei 125 W, nach jedem Block 1 Minute bei 100 W, davor 2 Minuten bei 100 W, danach 2 Minuten bei 80 W
 - `vorgabe-roennestad-30-15.csv` (32:30 Minuten): Mikrointervalle nach Rønnestad, 2 Serien aus je 13 Zyklen mit 30 Sekunden bei 240 W und 15 Sekunden bei 120 W (120 % und 60 % einer FTP von 200 W), dazwischen 3 Minuten bei 100 W, davor 4 Minuten bei 100 W und 2 Minuten bei 150 W, danach 4:30 Minuten bei 80 W
 - `vorgabe-persoenlich-30.csv` (30 Minuten): 3 Blöcke von 5 Minuten bei 200 W mit 2 Minuten bei 120 W dazwischen, 6 Minuten Einfahren in drei Stufen, 5 Minuten Ausfahren; aus einem Stufentest abgeleitet (85 % von 236 W)
+- `vorgabe-schwelle-3x8.csv` (45 Minuten): 3 Blöcke von 8 Minuten bei 195, 195 und 200 W mit 3 Minuten bei 120 W dazwischen, 10 Minuten Einfahren (5 Minuten bei 120 W, 5 Minuten bei 140 W), 5 Minuten Ausfahren bei 110 W; Steigerung von `persoenlich-30` zur Vorbereitung auf 200 W über 30–40 Minuten
 - `vorgabe-stufen-4x.csv` (30 Minuten): 4 Durchgänge mit stufenweisem Anstieg über 120, 150, 180 und 210 W (je 90 Sekunden), davor und danach 3 Minuten bei 100 W; aus einem Stufentest abgeleitet (51 bis 89 % von 236 W)
 - `vorgabe-stufen-4x-230.csv` (30 Minuten): wie `stufen-4x`, die oberste Stufe aber bei 230 statt 210 W
 - `vorgabe-stufentest.csv` (35 Minuten): ab 100 W alle 3 Minuten 25 W mehr, bis 350 W, danach 2 Minuten bei 80 W
