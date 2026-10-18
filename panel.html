@@ -404,16 +404,26 @@ companion.hidden = stored("ergometer-companion", onThisComputer ? "shown" : "hid
 document.getElementById("phone").addEventListener("click", () => {
   companion.hidden = !companion.hidden;
   try { localStorage.setItem("ergometer-companion", companion.hidden ? "hidden" : "shown"); } catch {}
+  if (!companion.hidden) showCompanion();
 });
-fetch("/qr").then((reply) => reply.json()).then(({ url, modules }) => {
-  const quiet = 4, size = modules.length + 2 * quiet;
-  let path = "";
-  modules.forEach((row, y) => [...row].forEach((module, x) => { if (module === "1") path += `M${x + quiet},${y + quiet}h1v1h-1z`; }));
-  companion.querySelector(".qr").innerHTML =
-    `<svg viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges"><rect width="${size}" height="${size}" fill="#fff"/><path d="${path}" fill="#000"/></svg>`;
-  const link = companion.querySelector("a");
-  link.textContent = link.href = url;
-}).catch(console.error);
+// The program looks the address up again on every request, so the card follows a new DHCP lease:
+// asked for whenever the card is shown and every 10 s while it stays visible.
+let companionUrl = null;
+function showCompanion() {
+  fetch("/qr").then((reply) => reply.json()).then(({ url, modules }) => {
+    if (url === companionUrl) return;
+    companionUrl = url;
+    const quiet = 4, size = modules.length + 2 * quiet;
+    let path = "";
+    modules.forEach((row, y) => [...row].forEach((module, x) => { if (module === "1") path += `M${x + quiet},${y + quiet}h1v1h-1z`; }));
+    companion.querySelector(".qr").innerHTML =
+      `<svg viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges"><rect width="${size}" height="${size}" fill="#fff"/><path d="${path}" fill="#000"/></svg>`;
+    const link = companion.querySelector("a");
+    link.textContent = link.href = url;
+  }).catch(console.error);
+}
+showCompanion();
+setInterval(() => { if (!companion.hidden) showCompanion(); }, 10000);
 
 // The program reports its state in English; show it in the chosen language.
 function translateStatus(text) {
@@ -471,6 +481,8 @@ const POWER_BANDS = PULSE_BANDS.map(([, , color], i, all) => {
   return [min + i * step, min + (i + 1) * step, color];
 });
 const BANDS = { "heart rate": PULSE_BANDS, power: POWER_BANDS };
+// Below this the chest strap has lost contact rather than measured a pulse: the curve bridges such a gap with a straight line.
+const PULSE_FLOOR = 80;
 // The colour of the band a value falls into; values outside the bands take the nearest one.
 const bandColor = (bands, v) => (bands.find(([, to]) => v < to) ?? bands[bands.length - 1])[2];
 
@@ -544,7 +556,7 @@ const lineColor = (key) => key === "power" ? "#000" : css(BANDS[key] ? "--pulse-
 
 for (const { key, el, unit } of plots) {
   const traces = [{
-    x: [], y: [], mode: "lines", connectgaps: false,
+    x: [], y: [], mode: "lines", connectgaps: key === "heart rate",
     line: { width: 2, color: lineColor(key) },
     hovertemplate: `%{y} ${unit}<extra></extra>`,
   }];
@@ -778,8 +790,8 @@ async function poll() {
 
     const times = samples.map((s) => rel(s.t));
     for (const { key, second, el } of samples.length ? plots : []) {
-      // A heart rate of 0 means "no sensor", not a reading.
-      const ys = samples.map((s) => (key === "heart rate" && !s[key] ? null : s[key] ?? null));
+      // A heart rate of 0 means "no sensor", one below PULSE_FLOOR a strap without contact; neither is a reading.
+      const ys = samples.map((s) => (key === "heart rate" && !(s[key] >= PULSE_FLOOR) ? null : s[key] ?? null));
       const update = { x: [times], y: [ys] }, traces = [0];
       if (second) {
         update.x.push(times); update.y.push(samples.map((s) => s[second] ?? null)); traces.push(1);

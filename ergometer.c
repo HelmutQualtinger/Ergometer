@@ -399,8 +399,9 @@ static struct {
     bool dark[QR_MAX][QR_MAX], fixed[QR_MAX][QR_MAX];
 } qr;
 
-/* The panel for a phone in the same network; see start_panel(). */
+/* The panel for a phone in the same network; see update_companion(). Under LOCK, since qr_matrix() fills the global qr. */
 static struct {
+    int port;
     char url[64];
     int size;
     bool qr[QR_MAX][QR_MAX];
@@ -610,6 +611,20 @@ static void local_address(char *address, size_t size) {
         getsockname(probe, (struct sockaddr *)&local, &length) == 0)
         inet_ntop(AF_INET, &local.sin_addr, address, (socklen_t)size);
     if (probe >= 0) close(probe);
+}
+
+/* Point COMPANION at this computer's current address; the router may have handed out a new one. */
+static void update_companion(void) {
+    char address[INET_ADDRSTRLEN], url[64];
+    local_address(address, sizeof address);
+    snprintf(url, sizeof url, "http://%s:%d/", address, COMPANION.port);
+    lock();
+    if (strcmp(url, COMPANION.url)) {
+        snprintf(COMPANION.url, sizeof COMPANION.url, "%s", url);
+        COMPANION.size = qr_matrix(COMPANION.url);
+        memcpy(COMPANION.qr, qr.dark, sizeof COMPANION.qr);
+    }
+    unlock();
 }
 
 static char *strip(char *text) {
@@ -1027,6 +1042,8 @@ static void http_get(int connection, const char *path, const char *query) {
         free(panel);
         return;
     } else if (!strcmp(path, "/qr")) {
+        update_companion();
+        lock();
         buf_printf(&json, "{\"url\": ");
         buf_json_string(&json, COMPANION.url);
         buf_printf(&json, ", \"modules\": [");
@@ -1036,6 +1053,7 @@ static void http_get(int connection, const char *path, const char *query) {
             buf_add(&json, "\"", 1);
         }
         buf_printf(&json, "]}");
+        unlock();
     } else if (!strcmp(path, "/data")) {
         const char *since_text = query ? strstr(query, "since=") : NULL;
         long since = since_text ? strtol(since_text + 6, NULL, 10) : 0;
@@ -1228,11 +1246,9 @@ static void run_detached(char *const arguments[]) {
 static void start_panel(int port, bool open_browser) {
     /* The panel listens in the whole local network, so a phone can be the remote control at the
      * ergometer: anyone in that network can open it. The QR code only saves typing the address. */
-    char address[INET_ADDRSTRLEN], url[64];
-    local_address(address, sizeof address);
-    snprintf(COMPANION.url, sizeof COMPANION.url, "http://%s:%d/", address, port);
-    COMPANION.size = qr_matrix(COMPANION.url);
-    memcpy(COMPANION.qr, qr.dark, sizeof COMPANION.qr);
+    char url[64];
+    COMPANION.port = port;
+    update_companion();
 
     int server = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in everywhere = {.sin_family = AF_INET, .sin_port = htons((uint16_t)port), .sin_addr.s_addr = htonl(INADDR_ANY)};

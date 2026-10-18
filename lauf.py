@@ -21,11 +21,16 @@ import io
 import json
 import subprocess
 import sys
+from bisect import bisect_left
 from datetime import datetime
 from pathlib import Path
 from statistics import mean
 
 SMOOTH_SECONDS = 10  # the pulse curve is a moving average over this window
+PULSE_FLOOR = 80     # bpm; readings below this are a strap that lost contact and get bridged (bridge_pulse)
+PULSE_MERGE = 180    # s; dropouts closer together than this are one, the readings between them are bridged too
+PULSE_FALL = 30      # s; before a dropout this much is dropped as well: the reading slides down into it slowly
+PULSE_RISE = 15      # s; and after it this much, where the reading climbs back
 CADENCE_SECONDS = 20  # and the cadence curve over this one
 EFFICIENCY = 0.25    # share of the energy turned over that reaches the pedals; as in training_log.csv
 WORK_SHARE = 0.8     # sections at this share of the highest target or more count as the hard ones
@@ -36,8 +41,36 @@ ADD_TRAINING = TRAINING / ".claude/skills/add-training/scripts/add_training.py"
 
 def read_log(path: Path) -> list[dict]:
     with path.open(newline="") as file:
-        return [{key: value if key == "time" else float(value or 0) for key, value in row.items()}
+        rows = [{key: value if key == "time" else float(value or 0) for key, value in row.items()}
                 for row in csv.DictReader(file)]
+    bridge_pulse(rows)
+    return rows
+
+
+def bridge_pulse(rows: list[dict]):
+    """Pulse readings below PULSE_FLOOR are the chest strap losing contact: draw a straight line across them.
+
+    Only gaps with a good reading on both sides are bridged; at the start or end of a log they stay
+    zero, which counts as no value.
+    """
+    bad = [i for i, row in enumerate(rows) if row.get("heart rate", 0) < PULSE_FLOOR]
+    # A strap that loses contact flickers back for a while: readings between two dropouts that lie
+    # less than PULSE_MERGE seconds apart belong to the same dropout.
+    for a, b in zip(bad, bad[1:]):
+        if rows[b]["seconds"] - rows[a]["seconds"] < PULSE_MERGE:
+            for row in rows[a:b + 1]:
+                row["heart rate"] = 0.0
+    # The reading slides down into a dropout and climbs out of it for a few seconds; those are no pulse either.
+    times = [rows[i]["seconds"] for i in bad]
+    for row in rows:
+        k = bisect_left(times, row["seconds"] - PULSE_RISE)
+        if k < len(times) and times[k] <= row["seconds"] + PULSE_FALL:
+            row["heart rate"] = 0.0
+    good = [i for i, row in enumerate(rows) if row.get("heart rate", 0) >= PULSE_FLOOR]
+    for a, b in zip(good, good[1:]):
+        t0, t1, p0, p1 = rows[a]["seconds"], rows[b]["seconds"], rows[a]["heart rate"], rows[b]["heart rate"]
+        for row in rows[a + 1:b]:
+            row["heart rate"] = p0 + (p1 - p0) * (row["seconds"] - t0) / (t1 - t0) if t1 > t0 else p0
 
 
 def smooth(rows: list[dict], key: str, seconds: float, sensor: bool = False) -> list[float | None]:
@@ -135,6 +168,9 @@ def analyse(paths: list[Path], temperature: float | None, betablocker: bool) -> 
     }
 
 
+DEFAULT_NOTE = "ohne Kinomap"
+
+
 def training_row(result: dict) -> dict:
     """The ride as it goes into the training log: the columns of training_log.csv that the logs can fill."""
     row = {"Datum": result["date"], "Dauer_sek": f"{result['seconds']:.0f}", "Kcal": f"{result['kcal']:.0f}", "Watt": f"{result['power']:.0f}",
@@ -144,8 +180,9 @@ def training_row(result: dict) -> dict:
     return row
 
 
-def file_in_training(row: dict, rr: str | None, note: str) -> tuple[dict, bool]:
-    """Append the ride to the training log, unless it is there already; then only a missing blood pressure is filled in. Returns the row as logged and whether it is new."""
+def file_in_training(row: dict, rr: str | None, note: str | None) -> tuple[dict, bool]:
+    """Append the ride to the training log, unless it is there already; then only a missing blood pressure is filled in,
+    and a note that was given replaces the comment. Returns the row as logged and whether it is new."""
     log = TRAINING / "training_log.csv"
     raw = log.read_bytes()
     # The file's own line ending is the one most lines have: other tools have left a single odd one behind.
@@ -156,9 +193,13 @@ def file_in_training(row: dict, rr: str | None, note: str) -> tuple[dict, bool]:
     for index, line in enumerate(lines[1:], 1):
         logged = dict(zip(header, next(csv.reader([line.decode()]), [])))
         if all(logged.get(key) == row[key] for key in same):
-            # A blood pressure that is given after the ride was filed is added to its row.
+            # A blood pressure that is given after the ride was filed is added to its row, a note replaces its comment.
+            changed = False
             if rr and not logged.get("RR_training"):
-                logged["RR_training"] = rr
+                logged["RR_training"], changed = rr, True
+            if note is not None and logged.get("Kommentar") != note:
+                logged["Kommentar"], changed = note, True
+            if changed:
                 out = io.StringIO()
                 csv.writer(out, lineterminator="").writerow([logged[name] for name in header])
                 lines[index] = out.getvalue().encode()
@@ -168,7 +209,7 @@ def file_in_training(row: dict, rr: str | None, note: str) -> tuple[dict, bool]:
 
     # The project's own script assigns the number and knows the conventions; it only takes whole minutes.
     command = [sys.executable, str(ADD_TRAINING), "--date", row["Datum"], "--duration", str(max(round(float(row["Dauer_sek"]) / 60), 1)),
-               "--kcal", row["Kcal"], "--watt", row["Watt"], "--note", note, "--no-pdf"]
+               "--kcal", row["Kcal"], "--watt", row["Watt"], "--note", note or DEFAULT_NOTE, "--no-pdf"]
     command += ["--hf", row["MaxHF"]] if row["MaxHF"] else []
     command += ["--rr", rr] if rr else []
     subprocess.run(command, check=True, capture_output=True, text=True, cwd=TRAINING)
@@ -361,13 +402,13 @@ def main():
     parser.add_argument("--betablocker", action="store_true", help="the rider takes a beta blocker: the pulse is not judged")
     parser.add_argument("--training", action="store_true", help=f"also file the ride in {TRAINING / 'training_log.csv'}")
     parser.add_argument("--rr", help="blood pressure after the ride, SYS/DIA/PULS, for the training log")
-    parser.add_argument("--note", default="ohne Kinomap", help="comment for the training log")
+    parser.add_argument("--note", help=f"comment for the training log (default for a new row: {DEFAULT_NOTE!r}); replaces the comment of a ride that is already filed")
     args = parser.parse_args()
 
     logs = Path(__file__).with_name("logs")
     paths = [Path(log) for log in args.logs] or [max(logs.glob("log-*.csv"), key=lambda p: p.stat().st_mtime)]
     result = analyse(paths, args.temperature, args.betablocker)
-    entry = training_row(result) | {"Kommentar": args.note, "RR_training": args.rr or ""}
+    entry = training_row(result) | {"Kommentar": args.note or DEFAULT_NOTE, "RR_training": args.rr or ""}
     result["entry"], result["entry_new"] = file_in_training(entry, args.rr, args.note) if args.training else (entry, False)
 
     first = read_log(paths[0])[0]["time"]

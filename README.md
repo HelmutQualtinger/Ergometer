@@ -96,6 +96,7 @@ Ohne `--panel` gibt es nur die Konsolenausgabe.
 
 - Kacheln mit den aktuellen Werten, darunter Verlaufskurven für Leistung, Trittfrequenz, Geschwindigkeit und Puls über die letzten 20 Minuten
 - Die Pulskurve liegt auf farbigen Zonen von 60 bis 160 bpm, die Leistungskurve auf denselben acht Farben, gleichmäßig verteilt von 80 bis 300 W. Die Kacheln für Puls und Leistung zeigen ihren Wert in der Farbe der aktuellen Zone.
+- Fällt der Puls unter 80 bpm, hat der Brustgurt meist den Kontakt verloren: Die Kurve überbrückt solche Lücken mit einer geraden Linie (Grenze `PULSE_FLOOR` in `panel.html`). Die Kachel zeigt weiter den gemeldeten Wert, und die Aufzeichnung enthält alle Werte.
 - Im Leistungsdiagramm ist die Vorgabe eine fette weiße Linie, die gemessene Leistung liegt schwarz darüber.
 - Die Kachel „Temperatur" zeigt die Raumtemperatur. Das Programm liest sie per MQTT von einem Sensor. Adresse und Topic des Brokers stehen in der Datei `.env` neben dem Programm (`MQTT_HOST`, `MQTT_PORT`, `MQTT_TOPIC`); sie gehört nicht ins Repository. Als Vorlage dient `.env.example`: kopieren (`cp .env.example .env`) und ausfüllen. Fehlt `MQTT_HOST` oder `MQTT_PORT`, entfällt die Kachel. Feld und Korrektur stehen als Konstanten `MQTT_FIELD` und `MQTT_OFFSET` oben in `ergometer.py`.
 - Oben rechts lassen sich Erscheinungsbild und Sprache umschalten.
@@ -128,9 +129,9 @@ Der Mac steht meist nicht in Griffweite des Sattels. Das Handy am Lenker zeigt d
 |---|---|
 | Seite lädt nicht | Das Handy ist nicht im selben WLAN (Mobilfunk, Gastnetz) – ins Heimnetz wechseln. Viele Gastnetze trennen die Geräte voneinander. |
 | Seite lädt nicht, WLAN stimmt | Die macOS-Firewall blockt: Systemeinstellungen → Netzwerk → Firewall → Optionen, dort eingehende Verbindungen für Python erlauben. |
-| Lesezeichen geht nicht mehr | Der Mac hat vom Router eine neue Adresse bekommen. Neu scannen; dauerhaft hilft eine feste Adresse für den Mac im Router (DHCP-Reservierung). |
-| QR-Code zeigt `127.0.0.1` | Der Mac hatte beim Start kein Netz. WLAN verbinden und das Programm neu starten. |
-| QR-Code zeigt eine fremde Adresse | Ein VPN am Mac war beim Start aktiv. VPN trennen und das Programm neu starten. |
+| Lesezeichen geht nicht mehr | Der Mac hat vom Router eine neue Adresse bekommen. Das Cockpit am Mac zeigt sie ohne Neustart: Der QR-Code wird beim Einblenden und alle 10 Sekunden neu geprüft. Neu scannen; dauerhaft hilft eine feste Adresse für den Mac im Router (DHCP-Reservierung) und am Mac „Private WLAN-Adresse“ auf „Fest“ oder „Aus“. |
+| QR-Code zeigt `127.0.0.1` | Der Mac hat gerade kein Netz. WLAN verbinden; der QR-Code passt sich nach spätestens 10 Sekunden an. |
+| QR-Code zeigt eine fremde Adresse | Ein VPN am Mac ist aktiv. VPN trennen; der QR-Code passt sich nach spätestens 10 Sekunden an. |
 | Kacheln da, Diagramme fehlen | Das Handy hat kein Internet; Plotly kommt von einem CDN. |
 | „Start“ gedrückt, aber die Werte stehen still | Das Ergometer ist nach einer Pause eingeschlafen und sendet nicht mehr; die Python-Version zeigt trotzdem „Connected“ und zeichnet nichts auf. Programm beenden, ein paar Umdrehungen treten und neu starten (die C-Version verbindet sich von selbst wieder). |
 

@@ -180,7 +180,7 @@ CONTROL = {"loop": None, "client": None, "range": None, "power_range": [0, MAX_T
            "last_run": None}
 LOG_DIR = PANEL_HTML.parent / "logs"
 PROFILE_DIR = PANEL_HTML.parent / "profiles"
-# The panel for a phone in the same network: {"url", "qr"}; see start_panel().
+# The panel for a phone in the same network: {"url", "qr"}; see update_companion().
 COMPANION = {}
 # QR code versions 1 to 6, which is plenty for a short address. Per error correction level:
 # the two bits that name it in the code, then for each version the error correction bytes
@@ -342,6 +342,14 @@ def local_address() -> str:
             return probe.getsockname()[0]
     except OSError:
         return "127.0.0.1"
+
+
+def update_companion(port: int) -> dict:
+    """Point COMPANION at this computer's current address; the router may have handed out a new one."""
+    url = f"http://{local_address()}:{port}/"
+    if COMPANION.get("url") != url:
+        COMPANION.update(url=url, qr=qr_matrix(url))
+    return COMPANION
 
 
 def parse_profile(text: str) -> list[list[float]]:
@@ -556,8 +564,9 @@ class PanelHandler(BaseHTTPRequestHandler):
         if url.path == "/":
             body, content_type = PANEL_HTML.read_bytes(), "text/html; charset=utf-8"
         elif url.path == "/qr":
-            modules = ["".join("1" if module else "0" for module in row) for row in COMPANION["qr"]]
-            body, content_type = json.dumps({"url": COMPANION["url"], "modules": modules}).encode(), "application/json"
+            companion = update_companion(self.server.server_address[1])
+            modules = ["".join("1" if module else "0" for module in row) for row in companion["qr"]]
+            body, content_type = json.dumps({"url": companion["url"], "modules": modules}).encode(), "application/json"
         elif url.path == "/data":
             since = int(parse_qs(url.query).get("since", ["0"])[0])
             payload = {"status": STATUS["text"], "next": len(SAMPLES), "samples": SAMPLES[since:],
@@ -628,15 +637,14 @@ class PanelHandler(BaseHTTPRequestHandler):
 def start_panel(port: int, open_browser: bool = True):
     # The panel listens in the whole local network, so a phone can be the remote control at the
     # ergometer: anyone in that network can open it. The QR code only saves typing the address.
-    companion = f"http://{local_address()}:{port}/"
-    COMPANION.update(url=companion, qr=qr_matrix(companion))
+    update_companion(port)
     server = ThreadingHTTPServer(("0.0.0.0", port), PanelHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     if MQTT_HOST and MQTT_PORT:
         threading.Thread(target=follow_temperature, daemon=True).start()
     url = f"http://127.0.0.1:{port}/"
     print(f"Panel: {url}")
-    print(f"Phone: {companion}\n{qr_text(COMPANION['qr'])}")
+    print(f"Phone: {COMPANION['url']}\n{qr_text(COMPANION['qr'])}")
     if open_browser:
         webbrowser.open(url)
     return server
