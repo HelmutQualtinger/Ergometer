@@ -44,6 +44,10 @@ If it is unclear whether two logs are one ride, ask.
   The targets in the log (printed section counts, the page's section table) tell you which
   profile it was; keep "ohne Kinomap" so these rides can be told apart from Kinomap ones.
 - `--rr SYS/DIA/PULS`: blood pressure after the ride, only if the user gave one. Never invent it.
+- `--assessment "..."`: a paragraph for the page's "Bewertung" card, in German; repeat the option for
+  more paragraphs. Pass it when the user asks for an assessment: how the ride went against the profile,
+  what the pulse and cadence did over the hard sections, how it sits in the recent days of training,
+  and how the user said it felt. Without it the card is hidden.
 - `--betablocker`: pass it for a rider on a beta blocker (see memory); the page then does not
   read anything into the pulse.
 - `--temperature X`: only for logs without a `room temperature` column (recorded before the

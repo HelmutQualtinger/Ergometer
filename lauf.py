@@ -268,6 +268,7 @@ PAGE = """<!doctype html>
   tr.total td { border-bottom: 0; }
   ul { margin: 6px 0 0; padding-left: 20px; }
   li { margin-bottom: 6px; }
+  #assessment p { margin: 6px 0 0; }
 </style>
 </head>
 <body>
@@ -275,6 +276,7 @@ PAGE = """<!doctype html>
 <h1>Lauf vom __DATE__</h1>
 <p class="sub" id="sub"></p>
 <section class="tiles" id="tiles"></section>
+<section class="card" id="assessment-card"><h2>Bewertung</h2><div id="assessment"></div></section>
 <section class="pair">
   <div class="card"><h2>Beobachtungen</h2><ul id="remarks"></ul></div>
   <div class="card"><h2>Eintrag im Trainingslog</h2><div class="note" id="entry-note"></div><div class="scroll"><table id="entry"></table></div></div>
@@ -332,6 +334,9 @@ if (D.pulse_max) remarks.push(D.betablocker
   ? `<b>Puls bis ${n(D.pulse_max)} bpm.</b> Unter Betablocker bewegt er sich kaum und sagt nichts über die Belastung.`
   : `<b>Puls bis ${n(D.pulse_max)} bpm</b>${work.length ? `, in den harten Abschnitten im Mittel ${n(work.reduce((sum, s) => sum + (s.pulse ?? 0), 0) / work.length)}` : ""}.`);
 document.getElementById("remarks").innerHTML = remarks.map((text) => `<li>${text}</li>`).join("");
+// The assessment is the rider's and Claude's judgement in words, given on the command line; plain text, one paragraph each.
+document.getElementById("assessment-card").hidden = !D.assessment.length;
+D.assessment.forEach((text) => document.getElementById("assessment").appendChild(document.createElement("p")).textContent = text);
 
 const row = (cells, cls) => `<tr${cls ? ` class="${cls}"` : ""}>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr>`;
 const E = D.entry;
@@ -403,11 +408,13 @@ def main():
     parser.add_argument("--training", action="store_true", help=f"also file the ride in {TRAINING / 'training_log.csv'}")
     parser.add_argument("--rr", help="blood pressure after the ride, SYS/DIA/PULS, for the training log")
     parser.add_argument("--note", help=f"comment for the training log (default for a new row: {DEFAULT_NOTE!r}); replaces the comment of a ride that is already filed")
+    parser.add_argument("--assessment", action="append", default=[], help="a paragraph of assessment for the page, in words; repeat for more paragraphs")
     args = parser.parse_args()
 
     logs = Path(__file__).with_name("logs")
     paths = [Path(log) for log in args.logs] or [max(logs.glob("log-*.csv"), key=lambda p: p.stat().st_mtime)]
     result = analyse(paths, args.temperature, args.betablocker)
+    result["assessment"] = args.assessment
     entry = training_row(result) | {"Kommentar": args.note or DEFAULT_NOTE, "RR_training": args.rr or ""}
     result["entry"], result["entry_new"] = file_in_training(entry, args.rr, args.note) if args.training else (entry, False)
 
