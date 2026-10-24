@@ -205,7 +205,7 @@ Mit `--training` wird die Fahrt zusätzlich in `~/training/training_log.csv` ein
 python3 kinomap.py ~/training/cern.zip --betablocker
 ```
 
-`kinomap.py` liest den Export einer Kinomap-Aktivität (das Zip mit `.csv`, `.tcx`, `.gpx` und `.pwx`) und schreibt `logs/kinomap-<jj-mm-tt-hh-mm-ss>.html`: Kennzahlen samt Normalized Power, Beobachtungen, Leistung gegen die FTP, Puls, Trittfrequenz, Geschwindigkeit und Höhe im Verlauf, die mittlere Leistung je fünf Minuten, die beste mittlere Leistung je Dauer und die Zeit in den Intensitätsstufen des Kalenders. Eine solche Fahrt hat keine Vorgabe, deshalb fehlt der Vergleich von Ist und Soll. Ins Trainingslog trägt das Programm nichts ein; es zeigt nur die Zeile, die dort schon steht. `--ftp` ändert die Bezugsleistung (200 W).
+`kinomap.py` liest den Export einer Kinomap-Aktivität (das Zip mit `.csv`, `.tcx`, `.gpx` und `.pwx`) und schreibt `logs/kinomap-<jj-mm-tt-hh-mm-ss>.html`: Kennzahlen samt Normalized Power, Beobachtungen, Leistung gegen die FTP, Puls, Trittfrequenz, Geschwindigkeit und Höhe im Verlauf, die mittlere Leistung je fünf Minuten, die beste mittlere Leistung je Dauer und die Zeit in den Intensitätsstufen des Kalenders. Eine solche Fahrt hat keine Vorgabe, deshalb fehlt der Vergleich von Ist und Soll. Ins Trainingslog trägt das Programm nichts ein; es zeigt nur die Zeile, die dort schon steht. `--ftp` ändert die Bezugsleistung (200 W). `--assessment "…"` fügt wie bei `lauf.py` eine Karte „Bewertung“ hinzu.
 
 ## Trainingskalender
 
