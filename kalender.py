@@ -336,6 +336,10 @@ def main():
     out.write_text(PAGE.replace("__FTP__", f"{args.ftp:g}").replace("__STAND__", today.strftime("%d.%m.%Y"))
                    .replace("__DATA__", json.dumps(data, ensure_ascii=False).replace("</", "<\\/")), encoding="utf-8")
 
+    # The same links by session number, for training.html in the training repo, which fetches this file
+    (logs / "pages.json").write_text(json.dumps({session["nr"]: session["pages"] for session in sessions if session["pages"]},
+                                                ensure_ascii=False, indent=1), encoding="utf-8")
+
     print(f"{len(sessions)} sessions on {len({session['date'] for session in sessions})} days, {sessions[0]['date']} to {sessions[-1]['date']}")
     print(out)
 
