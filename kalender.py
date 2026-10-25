@@ -145,10 +145,12 @@ PAGE = """<!doctype html>
   tr:last-child td { border-bottom: 0; }
   a { color: inherit; }
   #links { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px 16px; }
+  .back { font-size: 13px; color: var(--ink-2); }
 </style>
 </head>
 <body>
 <main>
+<nav class="back"><a href="../../training/training.html">← Trainingsübersicht</a></nav>
 <h1>Trainingskalender</h1>
 <p class="sub" id="sub"></p>
 <section class="tiles" id="tiles"></section>

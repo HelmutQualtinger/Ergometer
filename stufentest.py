@@ -252,11 +252,15 @@ PAGE = """<!doctype html>
   html.print th, html.print td { padding: 2px 5px; }
   html.print ul { margin: 4px 0; padding-left: 16px; }
   html.print li { margin-bottom: 3px; }
+  .back { font-size: 13px; color: var(--ink-2); }
+  .back a { color: inherit; }
+  html.print .back { display: none; }
 </style>
 <script>if (new URLSearchParams(location.search).has("print")) document.documentElement.classList.add("print");</script>
 </head>
 <body>
 <main>
+<nav class="back"><a href="index.html">← Trainingskalender</a> · <a href="../../training/training.html">Trainingsübersicht</a></nav>
 <h1>Stufentest vom __DATE__</h1>
 <p class="sub" id="sub"></p>
 <h2 class="section wide">Messung am Ergometer</h2>

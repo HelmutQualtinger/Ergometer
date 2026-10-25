@@ -145,7 +145,6 @@ PAGE = """<!doctype html>
   h1 { font-size: 22px; margin: 0; }
   h2 { font-size: 16px; margin: 0 0 2px; }
   a { color: inherit; }
-  .back { font-size: 13px; color: var(--ink-2); }
   .sub { color: var(--ink-2); margin: 2px 0 16px; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 10px; }
   .card { background: var(--surface); border: 1px solid var(--grid); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; min-width: 0; }
@@ -165,11 +164,13 @@ PAGE = """<!doctype html>
   ul { margin: 6px 0 0; padding-left: 20px; }
   li { margin-bottom: 6px; }
   #assessment p { margin: 6px 0 0; }
+  .back { font-size: 13px; color: var(--ink-2); }
+  .back a { color: inherit; }
 </style>
 </head>
 <body>
 <main>
-<a class="back" href="index.html">← Trainingskalender</a>
+<nav class="back"><a href="index.html">← Trainingskalender</a> · <a href="../../training/training.html">Trainingsübersicht</a></nav>
 <h1>Kinomap-Fahrt vom __DATE__</h1>
 <p class="sub" id="sub"></p>
 <section class="tiles" id="tiles"></section>
