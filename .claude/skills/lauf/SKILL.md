@@ -44,6 +44,11 @@ If it is unclear whether two logs are one ride, ask.
   The targets in the log (printed section counts, the page's section table) tell you which
   profile it was; keep "ohne Kinomap" so these rides can be told apart from Kinomap ones.
 - `--rr SYS/DIA/PULS`: blood pressure after the ride, only if the user gave one. Never invent it.
+- `--unrecorded MIN/KCAL[/HF]`: a part the user rode after the log without recording (a crashed or
+  closed program, a ride after a phone call), with the figures they read off the display. The page
+  shows it beside the recorded ride; with `--training` it becomes a row of its own (the script adds
+  it only once, and the watt in that row is estimated from the calories), and the calendar links
+  that row to the same page. Never estimate these figures yourself.
 - `--assessment "..."`: a paragraph for the page's "Bewertung" card, in German; repeat the option for
   more paragraphs. Pass it when the user asks for an assessment: how the ride went against the profile,
   what the pulse and cadence did over the hard sections, how it sits in the recent days of training,

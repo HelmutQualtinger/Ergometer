@@ -66,6 +66,8 @@ def pages(logs: Path) -> list[dict]:
         if data:
             ride = json.loads(data[1])
             page |= {"seconds": ride["seconds"], "kcal": round(ride["kcal"])}
+            if ride.get("unrecorded"):  # a part ridden without recording, filed as a session of its own
+                page["also"] = {"seconds": ride["unrecorded"]["seconds"], "kcal": round(ride["unrecorded"]["kcal"])}
         found.append(page)
     return found
 
@@ -74,18 +76,20 @@ def link_pages(sessions: list[dict], found: list[dict]) -> dict[str, list[dict]]
     """Give each session the pages of its ride; returns the pages that fit no session, by date.
 
     A lauf or kinomap page belongs to the session of its date with the same calories and about the same duration (the training log
-    rounds some durations to minutes). A stufentest page belongs to the session of the lauf page made from the same log.
+    rounds some durations to minutes), and a lauf page also to the session of the unrecorded part it reports. A stufentest page
+    belongs to the session of the lauf page made from the same log.
     """
     owner, rest = {}, {}
+    fit = lambda page, ride: next((session for session in sessions if session["date"] == page["date"] and session["kcal"] == ride["kcal"]
+                                   and abs(session["seconds"] - ride["seconds"]) <= MATCH_SECONDS), None)
     for page in found:
-        fits = [session for session in sessions if "kcal" in page and session["date"] == page["date"] and session["kcal"] == page["kcal"]
-                and abs(session["seconds"] - page["seconds"]) <= MATCH_SECONDS]
-        if fits:
-            owner[page["start"]] = fits[0]
+        if "kcal" in page and (session := fit(page, page)):
+            owner[page["start"]] = [session] + ([also] if "also" in page and (also := fit(page, page["also"])) else [])
     for page in found:
         link = {"file": page["file"], "label": page["label"]}
         if page["start"] in owner:
-            owner[page["start"]]["pages"].append(link)
+            for session in owner[page["start"]]:
+                session["pages"].append(link)
         else:
             rest.setdefault(page["date"], []).append(link)
     return rest

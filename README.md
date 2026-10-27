@@ -193,6 +193,7 @@ Das wertet die jüngste Aufzeichnung in `logs/` als Stufentest aus (oder eine al
 python3 lauf.py                                   # jüngste Aufzeichnung
 python3 lauf.py logs/log-A.csv logs/log-B.csv     # mehrere Aufzeichnungen als eine Fahrt
 python3 lauf.py --training --note "HIIT 12x(30:30)" --rr 126/83/87
+python3 lauf.py --training --unrecorded 25/250/110  # danach 25 min ohne Aufzeichnung (min/kcal/Puls vom Display)
 ```
 
 Das schreibt neben die erste Datei `lauf-<jj-mm-tt-hh-mm-ss>.html`: Kennzahlen, Beobachtungen (z. B. Abschnitte, die über die Vorgabe schossen), Leistung, Puls und Trittfrequenz im Verlauf (Puls und Trittfrequenz als gleitendes Mittel), die mittlere Leistung jedes Abschnitts gegen seine Vorgabe und Tabellen dazu. Lücken zwischen mehreren Aufzeichnungen sind markiert. Mit `--assessment "…"` kommt oben eine Karte „Bewertung“ mit einem Absatz Text dazu; mehrmals angegeben ergibt es mehrere Absätze.
