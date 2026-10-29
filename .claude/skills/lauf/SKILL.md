@@ -49,6 +49,9 @@ If it is unclear whether two logs are one ride, ask.
   shows it beside the recorded ride; with `--training` it becomes a row of its own (the script adds
   it only once, and the watt in that row is estimated from the calories), and the calendar links
   that row to the same page. Never estimate these figures yourself.
+  With `--unrecorded-before` the part counts as ridden before the logs (the recording was started late). The
+  ergometer's own counters in the first row of the log (`elapsed`, `energy`, `distance`) are exactly
+  that part, so they may be taken from there: `--unrecorded <elapsed/60>/<energy> --unrecorded-before`.
 - `--assessment "..."`: a paragraph for the page's "Bewertung" card, in German; repeat the option for
   more paragraphs. Pass it when the user asks for an assessment: how the ride went against the profile,
   what the pulse and cadence did over the hard sections, how it sits in the recent days of training,

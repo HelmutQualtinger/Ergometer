@@ -326,10 +326,11 @@ const U = D.unrecorded;  // a part ridden without recording, as the display show
 
 document.getElementById("sub").textContent = `${D.runs.length} Aufzeichnung${D.runs.length > 1 ? "en" : ""}, Start ${D.runs.map((run) => run.start).join(" und ")} Uhr` +
   (breaks.length ? ` · nicht aufgezeichnet dazwischen: ${breaks.map((run) => clock(run.pause)).join(", ")} min` : "") +
-  (U ? ` · danach ${clock(U.seconds)} min ohne Aufzeichnung` : "");
+  (U ? ` · ${U.before ? "davor" : "danach"} ${clock(U.seconds)} min ohne Aufzeichnung` : "");
 document.getElementById("tiles").innerHTML = [
-  ["Gefahrene Zeit", clock(D.seconds), "min", D.runs.length > 1 ? D.runs.map((run) => clock(run.seconds)).join(" + ") : `${n(D.distance, 2)} km`],
-  ...(U ? [["Mit nicht aufgezeichnetem Teil", clock(D.seconds + U.seconds), "min", `etwa ${n(D.kcal + U.kcal)} kcal, davon ${clock(U.seconds)} min und ${n(U.kcal)} kcal vom Display`]] : []),
+  ...(U ? [["Gesamtzeit", clock(D.seconds + U.seconds), "min", `${clock(U.seconds)} ohne Aufzeichnung + ${clock(D.seconds)} aufgezeichnet`],
+           ["Energie gesamt", n(D.kcal + U.kcal), "kcal", `${n(U.kcal)} vom Display + ${n(D.kcal)} aufgezeichnet`]] : []),
+  [U ? "Aufgezeichnet" : "Gefahrene Zeit", clock(D.seconds), "min", D.runs.length > 1 ? D.runs.map((run) => clock(run.seconds)).join(" + ") : `${n(D.distance, 2)} km`],
   ["Durchschnittsleistung", n(D.power), "W", `höchster Wert ${n(D.power_max)} W`],
   ["Arbeit", n(D.kj), "kJ", `etwa ${n(D.kcal)} kcal`],
   ["Höchster Puls", n(D.pulse_max), "bpm", D.betablocker ? "unter Betablocker" : ""],
@@ -352,7 +353,7 @@ if (work.length) {
 }
 remarks.push(`<b>Höchster Einzelwert ${n(D.power_max)} W</b> bei ${clock(D.peak_at)} min, als die Vorgabe ${n(D.peak_target)} W war` +
   (work.some((s) => Math.abs(s.start + s.seconds - D.peak_at) < 5 || Math.abs(s.start - D.peak_at) < 5) ? " – ein Ausschlag am Wechsel, kein gehaltener Wert." : "."));
-if (U) remarks.push(`<b>Danach ${clock(U.seconds)} min ohne Aufzeichnung</b> mit ${n(U.kcal)} kcal${U.pulse ? ` und Puls ${n(U.pulse)}` : ""}, wie das Display sie zeigte; in den Kurven und Abschnitten fehlt dieser Teil.`);
+if (U) remarks.push(`<b>${U.before ? "Davor" : "Danach"} ${clock(U.seconds)} min ohne Aufzeichnung</b> mit ${n(U.kcal)} kcal, daraus etwa ${n(U.power)} W und ${n(U.kj)} kJ${U.pulse ? ` und Puls ${n(U.pulse)}` : ""}, wie das Display sie zeigte; in den Kurven und Abschnitten fehlt dieser Teil.`);
 if (D.pulse_max) remarks.push(D.betablocker
   ? `<b>Puls bis ${n(D.pulse_max)} bpm.</b> Unter Betablocker bewegt er sich kaum und sagt nichts über die Belastung.`
   : `<b>Puls bis ${n(D.pulse_max)} bpm</b>${work.length ? `, in den harten Abschnitten im Mittel ${n(work.reduce((sum, s) => sum + (s.pulse ?? 0), 0) / work.length)}` : ""}.`);
@@ -378,9 +379,10 @@ document.getElementById("levels").innerHTML = "<tr><th>Vorgabe</th><th>Zeit</th>
   D.levels.map((level) => row([`${n(level.target)} W`, clock(level.seconds), `${n(level.power)} W`, level.pulse === null ? "–" : `${n(level.pulse)} bpm`])).join("");
 document.getElementById("runs-card").hidden = D.runs.length < 2 && !U;
 document.getElementById("runs").innerHTML = "<tr><th>Start</th><th>Dauer</th><th>Ø Leistung</th><th>Arbeit</th><th>kcal</th><th>Puls Ø / max</th></tr>" +
+  (U?.before ? row(["Nicht aufgezeichnet", clock(U.seconds), `${n(U.power)} W`, `${n(U.kj)} kJ`, n(U.kcal), `– / ${n(U.pulse)}`]) : "") +
   D.runs.map((run) => row([`${run.start} Uhr`, clock(run.seconds), `${n(run.power)} W`, `${n(run.kj)} kJ`, n(run.kcal), `${n(run.pulse)} / ${n(run.pulse_max)}`])).join("") +
-  (U ? row(["Nicht aufgezeichnet", clock(U.seconds), "–", "–", n(U.kcal), `– / ${n(U.pulse)}`]) : "") +
-  row(["Zusammen", clock(D.seconds + (U ? U.seconds : 0)), U ? "–" : `${n(D.power)} W`, U ? "–" : `${n(D.kj)} kJ`, n(D.kcal + (U ? U.kcal : 0)),
+  (U && !U.before ? row(["Nicht aufgezeichnet", clock(U.seconds), `${n(U.power)} W`, `${n(U.kj)} kJ`, n(U.kcal), `– / ${n(U.pulse)}`]) : "") +
+  row(["Zusammen", clock(D.seconds + (U ? U.seconds : 0)), `${n(U ? (D.kj + U.kj) * 1000 / (D.seconds + U.seconds) : D.power)} W`, `${n(D.kj + (U ? U.kj : 0))} kJ`, n(D.kcal + (U ? U.kcal : 0)),
        `– / ${n(Math.max(D.pulse_max ?? 0, U?.pulse ?? 0) || null)}`], "total");
 
 function draw() {
@@ -437,6 +439,7 @@ def main():
     parser.add_argument("--note", help=f"comment for the training log (default for a new row: {DEFAULT_NOTE!r}); replaces the comment of a ride that is already filed")
     parser.add_argument("--unrecorded", metavar="MIN/KCAL[/HF]", help="a part ridden after the logs without recording, from the display; "
                         "shown on the page and, with --training, filed as a row of its own")
+    parser.add_argument("--unrecorded-before", action="store_true", help="the --unrecorded part was ridden before the logs, not after")
     parser.add_argument("--assessment", action="append", default=[], help="a paragraph of assessment for the page, in words; repeat for more paragraphs")
     args = parser.parse_args()
 
@@ -449,10 +452,12 @@ def main():
     result["unrecorded"] = result["unrecorded_entry"] = None
     if args.unrecorded:
         minutes, kcal, *pulse = (float(value) for value in args.unrecorded.split("/"))
-        part = result["unrecorded"] = {"seconds": minutes * 60, "kcal": kcal, "pulse": pulse[0] if pulse else None}
-        note = f"{minutes:.0f} min nach Nr. {result['entry'].get('Nr')} angehängt, nicht aufgezeichnet, Werte vom Display, ohne Kinomap"
+        kj = kcal * 4.185 * EFFICIENCY  # the work at the pedals, estimated from the display's calories as in the training log
+        part = result["unrecorded"] = {"seconds": minutes * 60, "kcal": kcal, "kj": kj, "power": kj * 1000 / (minutes * 60),
+                                         "pulse": pulse[0] if pulse else None, "before": args.unrecorded_before}
+        note = f"{minutes:.0f} min {'vor' if args.unrecorded_before else 'nach'} Nr. {result['entry'].get('Nr')} angehängt, nicht aufgezeichnet, Werte vom Display, ohne Kinomap"
         result["unrecorded_entry"] = file_unrecorded(result["date"], part, note)[0] if args.training else {
-            "Dauer_sek": f"{part['seconds']:.0f}", "Kcal": f"{kcal:.0f}", "MaxHF": f"{part['pulse']:.0f}" if part["pulse"] else ""}
+            "Dauer_sek": f"{part['seconds']:.0f}", "Kcal": f"{kcal:.0f}", "Watt": f"{part['power']:.0f}", "MaxHF": f"{part['pulse']:.0f}" if part["pulse"] else ""}
 
     first = read_log(paths[0])[0]["time"]
     date = f"{first[8:10]}.{first[5:7]}.{first[:4]}, {first[11:16]} Uhr"
