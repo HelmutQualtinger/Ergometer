@@ -4,6 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ergometer AX 4000</title>
+<!-- Home screen (web/manifest.webmanifest for Android, the apple-* tags for iOS) and link previews -->
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#050807">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Ergometer">
+<meta name="description" content="Cockpit für das Ergometer AX 4000: Zielleistung, Vorgaben, Puls und Aufzeichnung, am Mac und am Handy">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Ergometer AX 4000">
+<meta property="og:description" content="Cockpit für Mac und Handy: Zielleistung, Vorgaben, Puls und Aufzeichnung">
+<meta property="og:image" content="/preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <script>
   // Remembered choices, applied before anything is drawn. The address can override them,
@@ -247,7 +264,8 @@
   .companion[hidden] { display: none; }
   .companion .qr { flex: none; width: 150px; }
   .companion .qr svg { display: block; width: 100%; border-radius: 4px; }
-  .companion a { color: inherit; font-weight: 400; overflow-wrap: anywhere; }
+  .companion a { color: inherit; font-weight: 400; overflow-wrap: anywhere; text-transform: none; }  /* addresses are typed by hand */
+  .companion .certificate { margin-top: 10px; }
   h1 { font-size: 17px; font-weight: 700; margin: 0; }
   #status { color: var(--text-secondary); font-size: 13px; text-align: right; flex: 1; min-width: 0; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 8px; margin-bottom: 8px; }
@@ -300,7 +318,8 @@
 </header>
 <section class="card companion" id="companion" hidden>
   <div class="qr"></div>
-  <div><div class="label" data-text="phone"></div><a></a></div>
+  <div><div class="label" data-text="phone"></div><a></a>
+    <div class="certificate" hidden><div class="label" data-text="certificate"></div><a></a></div></div>
 </section>
 <section class="tiles" id="tiles"></section>
 <section class="card control">
@@ -321,7 +340,7 @@
 <script>
 // Every text of the panel in each language. `locale` sets the number format.
 const TEXTS = {
-  de: { end: "Ende", temperature: "Temperatur", phone: "Mit dem Handy scannen: Start, Stopp und Vorgabe direkt am Ergometer",
+  de: { end: "Ende", temperature: "Temperatur", phone: "Mit dem Handy scannen: Start, Stopp und Vorgabe direkt am Ergometer", certificate: "Einmalig vorher am Handy öffnen und als Zertifikat installieren, damit die sichere Adresse gilt",
         locale: "de-DE", power: "Leistung", cadence: "Trittfrequenz", speed: "Geschwindigkeit", pulse: "Puls",
         resistance: "Widerstand", distance: "Distanz", energy: "Energie", time: "Zeit", target: "Zielleistung",
         off: "aus", profile: "Vorgabe", manual: "manuell", start: "Start", stop: "Stopp", actual: "Ist",
@@ -329,7 +348,7 @@ const TEXTS = {
         unreachable: "Programm nicht erreichbar", error: "Fehler", auto: "Auto", light: "Hell", dark: "Dunkel",
         scanning: "Suche Ergometer …", connecting: "Verbinde mit", connected: "Verbunden mit",
         notFound: "Ergometer nicht gefunden", disconnected: "Ergometer getrennt" },
-  it: { end: "Fine", temperature: "Temperatura", phone: "Scansiona con il telefono: avvio, arresto e profilo direttamente dall'ergometro",
+  it: { end: "Fine", temperature: "Temperatura", phone: "Scansiona con il telefono: avvio, arresto e profilo direttamente dall'ergometro", certificate: "Prima, una sola volta: apri sul telefono e installa come certificato, così l'indirizzo sicuro è valido",
         locale: "it-IT", power: "Potenza", cadence: "Cadenza", speed: "Velocità", pulse: "Battito",
         resistance: "Resistenza", distance: "Distanza", energy: "Energia", time: "Tempo", target: "Potenza obiettivo",
         off: "spento", profile: "Profilo", manual: "manuale", start: "Avvia", stop: "Ferma", actual: "Reale",
@@ -337,7 +356,7 @@ const TEXTS = {
         unreachable: "Programma non raggiungibile", error: "Errore", auto: "Auto", light: "Chiaro", dark: "Scuro",
         scanning: "Ricerca ergometro …", connecting: "Connessione a", connected: "Connesso a",
         notFound: "Ergometro non trovato", disconnected: "Ergometro disconnesso" },
-  en: { end: "End", temperature: "Temperature", phone: "Scan with your phone: start, stop and profile right at the ergometer",
+  en: { end: "End", temperature: "Temperature", phone: "Scan with your phone: start, stop and profile right at the ergometer", certificate: "Once beforehand: open on the phone and install as a certificate so the secure address is trusted",
         locale: "en-GB", power: "Power", cadence: "Cadence", speed: "Speed", pulse: "Heart rate",
         resistance: "Resistance", distance: "Distance", energy: "Energy", time: "Time", target: "Target power",
         off: "off", profile: "Profile", manual: "manual", start: "Start", stop: "Stop", actual: "Actual",
@@ -345,7 +364,7 @@ const TEXTS = {
         unreachable: "Program not reachable", error: "Error", auto: "Auto", light: "Light", dark: "Dark",
         scanning: "Searching for ergometer …", connecting: "Connecting to", connected: "Connected to",
         notFound: "Ergometer not found", disconnected: "Ergometer disconnected" },
-  es: { end: "Fin", temperature: "Temperatura", phone: "Escanea con el móvil: inicio, parada y perfil desde el ergómetro",
+  es: { end: "Fin", temperature: "Temperatura", phone: "Escanea con el móvil: inicio, parada y perfil desde el ergómetro", certificate: "Una vez antes: ábrelo en el móvil e instálalo como certificado para que la dirección segura sea válida",
         locale: "es-ES", power: "Potencia", cadence: "Cadencia", speed: "Velocidad", pulse: "Pulso",
         resistance: "Resistencia", distance: "Distancia", energy: "Energía", time: "Tiempo", target: "Potencia objetivo",
         off: "apagado", profile: "Perfil", manual: "manual", start: "Iniciar", stop: "Parar", actual: "Real",
@@ -353,7 +372,7 @@ const TEXTS = {
         unreachable: "Programa no disponible", error: "Error", auto: "Auto", light: "Claro", dark: "Oscuro",
         scanning: "Buscando ergómetro …", connecting: "Conectando con", connected: "Conectado a",
         notFound: "Ergómetro no encontrado", disconnected: "Ergómetro desconectado" },
-  fr: { end: "Fin", temperature: "Température", phone: "Scanner avec le téléphone : démarrage, arrêt et profil depuis l'ergomètre",
+  fr: { end: "Fin", temperature: "Température", phone: "Scanner avec le téléphone : démarrage, arrêt et profil depuis l'ergomètre", certificate: "Une fois avant : ouvrir sur le téléphone et installer comme certificat pour que l'adresse sécurisée soit reconnue",
         locale: "fr-FR", power: "Puissance", cadence: "Cadence", speed: "Vitesse", pulse: "Pouls",
         resistance: "Résistance", distance: "Distance", energy: "Énergie", time: "Temps", target: "Puissance cible",
         off: "arrêt", profile: "Profil", manual: "manuel", start: "Démarrer", stop: "Arrêter", actual: "Réel",
@@ -361,7 +380,7 @@ const TEXTS = {
         unreachable: "Programme injoignable", error: "Erreur", auto: "Auto", light: "Clair", dark: "Sombre",
         scanning: "Recherche de l'ergomètre …", connecting: "Connexion à", connected: "Connecté à",
         notFound: "Ergomètre introuvable", disconnected: "Ergomètre déconnecté" },
-  cn: { end: "结束", temperature: "室温", phone: "用手机扫描：在测功车上直接开始、停止和选择方案",
+  cn: { end: "结束", temperature: "室温", phone: "用手机扫描：在测功车上直接开始、停止和选择方案", certificate: "首次使用前：在手机上打开并安装为证书，安全地址才会被信任",
         locale: "zh-CN", power: "功率", cadence: "踏频", speed: "速度", pulse: "心率",
         resistance: "阻力", distance: "距离", energy: "能量", time: "时间", target: "目标功率",
         off: "关", profile: "方案", manual: "手动", start: "开始", stop: "停止", actual: "实际",
@@ -369,7 +388,7 @@ const TEXTS = {
         unreachable: "无法连接程序", error: "错误", auto: "自动", light: "浅色", dark: "深色",
         scanning: "正在搜索测功车…", connecting: "正在连接", connected: "已连接",
         notFound: "未找到测功车", disconnected: "测功车已断开" },
-  jp: { end: "終了", temperature: "室温", phone: "スマホでスキャン：エルゴメーターの横で開始・停止・プロファイル選択",
+  jp: { end: "終了", temperature: "室温", phone: "スマホでスキャン：エルゴメーターの横で開始・停止・プロファイル選択", certificate: "最初に一度だけ：スマホで開いて証明書としてインストールすると安全なアドレスが信頼されます",
         locale: "ja-JP", power: "パワー", cadence: "ケイデンス", speed: "速度", pulse: "心拍数",
         resistance: "負荷", distance: "距離", energy: "エネルギー", time: "時間", target: "目標パワー",
         off: "オフ", profile: "プロファイル", manual: "手動", start: "開始", stop: "停止", actual: "実測",
@@ -410,7 +429,7 @@ document.getElementById("phone").addEventListener("click", () => {
 // asked for whenever the card is shown and every 10 s while it stays visible.
 let companionUrl = null;
 function showCompanion() {
-  fetch("/qr").then((reply) => reply.json()).then(({ url, modules }) => {
+  fetch("/qr").then((reply) => reply.json()).then(({ url, modules, certificate }) => {
     if (url === companionUrl) return;
     companionUrl = url;
     const quiet = 4, size = modules.length + 2 * quiet;
@@ -420,6 +439,10 @@ function showCompanion() {
       `<svg viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges"><rect width="${size}" height="${size}" fill="#fff"/><path d="${path}" fill="#000"/></svg>`;
     const link = companion.querySelector("a");
     link.textContent = link.href = url;
+    // Without it the phone's browser warns about the HTTPS address and will not install the panel as an app.
+    const authority = companion.querySelector(".certificate");
+    authority.hidden = !certificate;
+    if (certificate) authority.querySelector("a").textContent = authority.querySelector("a").href = certificate;
   }).catch(console.error);
 }
 showCompanion();

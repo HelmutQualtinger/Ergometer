@@ -66,7 +66,7 @@ Das Ergometer nimmt nur eine Bluetooth-Verbindung gleichzeitig an: Vor dem Start
 
 ## C-Version
 
-`ergometer.c` ist dasselbe Programm in C: gleiche Optionen, dasselbe Cockpit (`panel.html`), dieselben Vorgaben und Logdateien. Es braucht weder uv noch Python, dafür die Xcode Command Line Tools (`xcode-select --install`) zum Übersetzen:
+`ergometer.c` ist dasselbe Programm in C: gleiche Optionen, dasselbe Cockpit (`panel.html`), dieselben Vorgaben und Logdateien. Es braucht weder uv noch Python, dafür die Xcode Command Line Tools (`xcode-select --install`) und OpenSSL (`brew install openssl@3`, für HTTPS am Handy) zum Übersetzen:
 
 ```
 cd ~/Ergometer
@@ -111,8 +111,12 @@ Der Mac steht meist nicht in Griffweite des Sattels. Das Handy am Lenker zeigt d
 1. Das Handy ins selbe WLAN bringen wie den Mac.
 2. Am Mac das Programm mit `--panel` starten. Fragt die macOS-Firewall nach eingehenden Verbindungen, „Erlauben" wählen.
 3. Den QR-Code mit der Kamera des Handys scannen. Er steht im Terminal und im Cockpit am Mac; der Knopf 📱 oben rechts blendet ihn dort ein und aus. Ohne Kamera geht es auch von Hand: Die Adresse steht im Terminal in der Zeile `Phone:` und im Cockpit neben dem QR-Code.
-4. Die Seite als Lesezeichen sichern oder auf den Home-Bildschirm legen (iPhone: Teilen → „Zum Home-Bildschirm"; Android/Chrome: Menü ⋮ → „Zum Startbildschirm hinzufügen"). Danach ist kein Scannen mehr nötig.
-5. Die Bildschirmsperre des Handys für die Fahrt verlängern oder abschalten (iPhone: Einstellungen → Anzeige & Helligkeit → Automatische Sperre). Das Cockpit hält den Bildschirm des Handys nicht selbst wach.
+4. Das Zertifikat installieren (einmalig, damit das Handy der sicheren Adresse vertraut). Das Cockpit am Mac zeigt unter dem QR-Code die Adresse dazu, z. B. `http://192.168.1.48:8050/ca.crt`; sie steht auch im Terminal in der Zeile `Certificate for the phone`. Diese Adresse am Handy öffnen, dann:
+   - Android: Die Datei wird geladen. Einstellungen → Sicherheit und Datenschutz → Weitere Sicherheitseinstellungen → Verschlüsselung und Anmeldedaten → Zertifikat installieren → CA-Zertifikat, dann `ca.crt` aus den Downloads wählen (die Menünamen weichen je nach Hersteller etwas ab).
+   - iPhone: In Safari öffnen und „Zulassen" tippen. Einstellungen → Allgemein → VPN und Geräteverwaltung → Profil „Ergometer …" → Installieren. Danach Einstellungen → Allgemein → Info → Zertifikatsvertrauenseinstellungen → „Ergometer …" einschalten.
+5. Den QR-Code noch einmal scannen. Jetzt öffnet sich das Cockpit über `https://…:8051/` ohne Warnung.
+6. Das Cockpit als App installieren: Android/Chrome: Menü ⋮ → „App installieren"; iPhone: Teilen → „Zum Home-Bildschirm". Es erscheint mit eigenem Symbol und dem Namen „Ergometer" und öffnet sich ohne Adressleiste. Am iPhone merkt sich die App Erscheinungsbild und Sprache getrennt von Safari.
+7. Die Bildschirmsperre des Handys für die Fahrt verlängern oder abschalten (iPhone: Einstellungen → Anzeige & Helligkeit → Automatische Sperre). Das Cockpit hält den Bildschirm des Handys nicht selbst wach.
 
 ### Im Betrieb
 
@@ -121,6 +125,7 @@ Der Mac steht meist nicht in Griffweite des Sattels. Das Handy am Lenker zeigt d
 - Am Handy rückt der Countdown bis zum nächsten Leistungswechsel in eine eigene Zeile und wird groß genug, um ihn vom Sattel aus zu lesen.
 - Für die Pieptöne am Handy die Seite einmal antippen (z. B. den Knopf 🔔); vorher spielt der Browser keinen Ton. Am iPhone muss außerdem der Stummschalter aus sein.
 - Erscheinungsbild, Sprache, Ton und die Anzeige des QR-Codes merkt sich jedes Gerät für sich. Beides lässt sich auch in der Adresse festlegen, z. B. `http://192.168.1.184:8050/?theme=dark&language=en`.
+- Wird die Adresse in einem Messenger geteilt, zeigt er eine Vorschau mit Bild (`web/preview.png`), sofern der Empfänger im selben Netz ist.
 - Der Mac muss wach bleiben: Das Programm verhindert den Ruhezustand, solange es läuft, aber ein zugeklapptes MacBook schläft trotzdem ein.
 
 ### Wenn das Handy das Cockpit nicht öffnet
@@ -132,14 +137,17 @@ Der Mac steht meist nicht in Griffweite des Sattels. Das Handy am Lenker zeigt d
 | Lesezeichen geht nicht mehr | Der Mac hat vom Router eine neue Adresse bekommen. Das Cockpit am Mac zeigt sie ohne Neustart: Der QR-Code wird beim Einblenden und alle 10 Sekunden neu geprüft. Neu scannen; dauerhaft hilft eine feste Adresse für den Mac im Router (DHCP-Reservierung) und am Mac „Private WLAN-Adresse“ auf „Fest“ oder „Aus“. |
 | QR-Code zeigt `127.0.0.1` | Der Mac hat gerade kein Netz. WLAN verbinden; der QR-Code passt sich nach spätestens 10 Sekunden an. |
 | QR-Code zeigt eine fremde Adresse | Ein VPN am Mac ist aktiv. VPN trennen; der QR-Code passt sich nach spätestens 10 Sekunden an. |
+| Warnung „Verbindung nicht privat“ | Das Zertifikat ist am Handy nicht installiert oder (iPhone) nicht in den Zertifikatsvertrauenseinstellungen eingeschaltet, siehe Einrichten, Schritt 4. Wurde `certs/` am Mac gelöscht, ist eine neue Zertifizierungsstelle entstanden: die alte am Handy entfernen und die neue installieren. |
 | Kacheln da, Diagramme fehlen | Das Handy hat kein Internet; Plotly kommt von einem CDN. |
 | „Start“ gedrückt, aber die Werte stehen still | Das Ergometer ist nach einer Pause eingeschlafen und sendet nicht mehr; die Python-Version zeigt trotzdem „Connected“ und zeichnet nichts auf. Programm beenden, ein paar Umdrehungen treten und neu starten (die C-Version verbindet sich von selbst wieder). |
 
 ### Sicherheit
 
-- Der QR-Code enthält nur die Adresse des Cockpits im Heimnetz (z. B. `http://192.168.1.184:8050/`). Mit `--port N` ändert sich die Adresse entsprechend.
+- Der QR-Code enthält nur die Adresse des Cockpits im Heimnetz (z. B. `https://192.168.1.184:8051/`). Mit `--port N` ändert sich die Adresse entsprechend.
 - Es gibt keine Anmeldung: Jedes Gerät im selben Netz kann das Cockpit öffnen und das Ergometer bedienen.
-- Die Verbindung ist unverschlüsseltes HTTP und nur für das eigene Heimnetz gedacht.
+- Das Handy benutzt HTTPS auf dem Port nach dem des Cockpits (Standard 8051), der Mac weiter `http://127.0.0.1:8050/`. Das Zertifikat stellt das Programm selbst aus (`certificate.sh`, braucht `openssl`): beim ersten Start eine eigene Zertifizierungsstelle, die in `certs/` liegt und auf dem Handy installiert wird, und für jede neue Adresse des Macs ein neues Serverzertifikat. Das Handy muss danach nichts neu installieren.
+- Die Zertifizierungsstelle darf nur Adressen im Heimnetz (10.x, 172.16–31.x, 192.168.x, 127.x und `localhost`) bestätigen. Wer `certs/ca.key` vom Mac kopiert, kann damit also keine fremden Webseiten auf dem Handy vortäuschen. `certs/` gehört trotzdem niemandem gegeben und steht nicht im Repository.
+- Fehlt `openssl` oder scheitert das Zertifikat, läuft alles wie zuvor über unverschlüsseltes HTTP; das Cockpit lässt sich dann am Handy nur als Lesezeichen, nicht als App ablegen.
 
 ## Leistungsvorgabe aus einer Datei
 

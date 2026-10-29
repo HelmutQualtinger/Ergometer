@@ -25,6 +25,7 @@ import re
 import secrets
 import shutil
 import socket
+import ssl
 import struct
 import subprocess
 import threading
@@ -168,6 +169,9 @@ PARSERS = {INDOOR_BIKE_DATA: parse_indoor_bike_data, HEART_RATE: parse_heart_rat
 SAMPLES: list[dict] = []
 STATUS = {"text": "starting"}
 PANEL_HTML = Path(__file__).with_name("panel.html")
+WEB_DIR = Path(__file__).with_name("web")
+WEB_FILES = {"manifest.webmanifest": "application/manifest+json", "icon-192.png": "image/png",
+             "icon-512.png": "image/png", "apple-touch-icon.png": "image/png", "preview.png": "image/png"}
 # Set once connected, so the panel's HTTP thread can send commands to the ergometer.
 CONTROL = {"loop": None, "client": None, "range": None, "power_range": [0, MAX_TARGET, 5],
            "target_power": 0, "write_offset": 0,
@@ -180,8 +184,13 @@ CONTROL = {"loop": None, "client": None, "range": None, "power_range": [0, MAX_T
            "last_run": None}
 LOG_DIR = PANEL_HTML.parent / "logs"
 PROFILE_DIR = PANEL_HTML.parent / "profiles"
-# The panel for a phone in the same network: {"url", "qr"}; see update_companion().
+# The panel for a phone in the same network: {"address", "url", "qr", "certificate"}; see update_companion().
 COMPANION = {}
+COMPANION_LOCK = threading.Lock()
+# HTTPS for the phone (a browser installs the panel as an app only from a secure origin) runs on the
+# panel's port + 1 with the certificate from certificate.sh; TLS holds its context once that worked.
+CERT_DIR = PANEL_HTML.parent / "certs"
+TLS = {"context": None}
 # QR code versions 1 to 6, which is plenty for a short address. Per error correction level:
 # the two bits that name it in the code, then for each version the error correction bytes
 # per block and the number of blocks. A code survives damage to about 7 % (L), 15 % (M),
@@ -344,12 +353,29 @@ def local_address() -> str:
         return "127.0.0.1"
 
 
+def renew_certificate(address: str) -> bool:
+    """Have certificate.sh make a server certificate for this address and load it; False without HTTPS."""
+    try:
+        subprocess.run([PANEL_HTML.with_name("certificate.sh"), address], check=True, capture_output=True)
+        context = TLS["context"] or ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(CERT_DIR / "server.crt", CERT_DIR / "server.key")  # new connections get it
+        TLS["context"] = context
+        return True
+    except (OSError, subprocess.CalledProcessError, ssl.SSLError) as exc:
+        print(f"{stamp()}  no HTTPS for the phone: {exc}")
+        return False
+
+
 def update_companion(port: int) -> dict:
     """Point COMPANION at this computer's current address; the router may have handed out a new one."""
-    url = f"http://{local_address()}:{port}/"
-    if COMPANION.get("url") != url:
-        COMPANION.update(url=url, qr=qr_matrix(url))
-    return COMPANION
+    with COMPANION_LOCK:
+        address = local_address()
+        if COMPANION.get("address") != address:
+            secure = renew_certificate(address)
+            url = f"https://{address}:{port + 1}/" if secure else f"http://{address}:{port}/"
+            COMPANION.update(address=address, url=url, qr=qr_matrix(url),
+                             certificate=f"http://{address}:{port}/ca.crt" if secure else None)
+        return COMPANION
 
 
 def parse_profile(text: str) -> list[list[float]]:
@@ -566,7 +592,11 @@ class PanelHandler(BaseHTTPRequestHandler):
         elif url.path == "/qr":
             companion = update_companion(self.server.server_address[1])
             modules = ["".join("1" if module else "0" for module in row) for row in companion["qr"]]
-            body, content_type = json.dumps({"url": companion["url"], "modules": modules}).encode(), "application/json"
+            body = json.dumps({"url": companion["url"], "modules": modules, "certificate": companion["certificate"]}).encode()
+            content_type = "application/json"
+        elif url.path == "/ca.crt" and (CERT_DIR / "ca.crt").exists():
+            # The certificate authority the phone installs once to trust the HTTPS panel.
+            body, content_type = (CERT_DIR / "ca.crt").read_bytes(), "application/x-x509-ca-cert"
         elif url.path == "/data":
             since = int(parse_qs(url.query).get("since", ["0"])[0])
             payload = {"status": STATUS["text"], "next": len(SAMPLES), "samples": SAMPLES[since:],
@@ -578,6 +608,10 @@ class PanelHandler(BaseHTTPRequestHandler):
                        # Lets an open page notice that panel.html was edited and reload itself.
                        "panel_version": PANEL_HTML.stat().st_mtime}
             body, content_type = json.dumps(payload).encode(), "application/json"
+        elif url.path.lstrip("/") in WEB_FILES:
+            # Icons, manifest and link preview for the phone's home screen, from web/.
+            name = url.path.lstrip("/")
+            body, content_type = (WEB_DIR / name).read_bytes(), WEB_FILES[name]
         else:
             self.send_error(404)
             return
@@ -640,11 +674,19 @@ def start_panel(port: int, open_browser: bool = True):
     update_companion(port)
     server = ThreadingHTTPServer(("0.0.0.0", port), PanelHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
+    if TLS["context"]:
+        secure = ThreadingHTTPServer(("0.0.0.0", port + 1), PanelHandler)
+        # The handshake happens in the request's thread, so a stalled client cannot block the others.
+        secure.socket = TLS["context"].wrap_socket(secure.socket, server_side=True, do_handshake_on_connect=False)
+        secure.handle_error = lambda request, client: None  # refused certificates, plain HTTP on this port
+        threading.Thread(target=secure.serve_forever, daemon=True).start()
     if MQTT_HOST and MQTT_PORT:
         threading.Thread(target=follow_temperature, daemon=True).start()
     url = f"http://127.0.0.1:{port}/"
     print(f"Panel: {url}")
     print(f"Phone: {COMPANION['url']}\n{qr_text(COMPANION['qr'])}")
+    if COMPANION["certificate"]:
+        print(f"Certificate for the phone (install once): {COMPANION['certificate']}")
     if open_browser:
         webbrowser.open(url)
     return server

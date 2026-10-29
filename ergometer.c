@@ -23,6 +23,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <limits.h>
 #include <math.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -40,11 +41,14 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #endif
+
+#include <openssl/ssl.h>
 
 #include "ble.h"
 
@@ -340,7 +344,7 @@ static const char *program_file(const char *name) {
     return path;
 }
 
-static char *read_file(const char *path) {
+static char *read_file_length(const char *path, size_t *length) {
     FILE *file = fopen(path, "rb");
     if (!file) return NULL;
     struct buf text = {0};
@@ -349,8 +353,19 @@ static char *read_file(const char *path) {
     buf_add(&text, "", 0);
     while ((count = fread(chunk, 1, sizeof chunk, file)) > 0) buf_add(&text, chunk, count);
     fclose(file);
+    if (length) *length = text.length;
     return text.text;
 }
+
+static char *read_file(const char *path) {
+    return read_file_length(path, NULL);
+}
+
+/* Icons, manifest and link preview for the phone's home screen, served from web/. */
+static const struct { const char *name, *content_type; } WEB_FILES[] = {
+    {"manifest.webmanifest", "application/manifest+json"}, {"icon-192.png", "image/png"},
+    {"icon-512.png", "image/png"}, {"apple-touch-icon.png", "image/png"}, {"preview.png", "image/png"},
+};
 
 /* The settings from the .env file; variables that are already set in the environment win. */
 static void read_env(void) {
@@ -402,10 +417,16 @@ static struct {
 /* The panel for a phone in the same network; see update_companion(). Under LOCK, since qr_matrix() fills the global qr. */
 static struct {
     int port;
-    char url[64];
+    char address[INET_ADDRSTRLEN], url[64], certificate[64]; /* certificate: "" without HTTPS */
     int size;
     bool qr[QR_MAX][QR_MAX];
 } COMPANION;
+
+/* HTTPS for the phone (a browser installs the panel as an app only from a secure origin) runs on the
+ * panel's port + 1 with the certificate from certificate.sh; TLS is set once that worked. New
+ * connections are made under LOCK, because renew_certificate() swaps the certificate in place. */
+static SSL_CTX *TLS;
+static pthread_mutex_t RENEW_LOCK = PTHREAD_MUTEX_INITIALIZER;
 
 static bool qr_mask(int mask, int x, int y) {
     switch (mask) {
@@ -613,18 +634,51 @@ static void local_address(char *address, size_t size) {
     if (probe >= 0) close(probe);
 }
 
+/* Have certificate.sh make a server certificate for this address and load it; false without HTTPS. */
+static bool renew_certificate(const char *address) {
+    char script[1400], chain[1400], key[1400];
+    snprintf(script, sizeof script, "%s", program_file("certificate.sh"));
+    snprintf(chain, sizeof chain, "%s", program_file("certs/server.crt"));
+    snprintf(key, sizeof key, "%s", program_file("certs/server.key"));
+    pid_t child;
+    int status = -1;
+    extern char **environ;
+    posix_spawn_file_actions_t quiet;
+    posix_spawn_file_actions_init(&quiet);
+    posix_spawn_file_actions_addopen(&quiet, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
+    posix_spawn_file_actions_addopen(&quiet, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
+    bool made = !posix_spawn(&child, script, &quiet, NULL, (char *[]){script, (char *)address, NULL}, environ) &&
+                waitpid(child, &status, 0) == child && WIFEXITED(status) && !WEXITSTATUS(status);
+    posix_spawn_file_actions_destroy(&quiet);
+    lock();
+    SSL_CTX *context = TLS ? TLS : SSL_CTX_new(TLS_server_method());
+    bool loaded = made && context && SSL_CTX_use_certificate_chain_file(context, chain) == 1 &&
+                  SSL_CTX_use_PrivateKey_file(context, key, SSL_FILETYPE_PEM) == 1; /* new connections get it */
+    if (loaded) TLS = context;
+    else if (context && context != TLS) SSL_CTX_free(context);
+    unlock();
+    if (!loaded) printf("%s  no HTTPS for the phone: certificate.sh failed\n", stamp());
+    return loaded;
+}
+
 /* Point COMPANION at this computer's current address; the router may have handed out a new one. */
 static void update_companion(void) {
-    char address[INET_ADDRSTRLEN], url[64];
+    char address[INET_ADDRSTRLEN];
     local_address(address, sizeof address);
-    snprintf(url, sizeof url, "http://%s:%d/", address, COMPANION.port);
-    lock();
-    if (strcmp(url, COMPANION.url)) {
-        snprintf(COMPANION.url, sizeof COMPANION.url, "%s", url);
+    pthread_mutex_lock(&RENEW_LOCK);
+    if (strcmp(address, COMPANION.address)) {
+        bool secure = renew_certificate(address);
+        lock();
+        snprintf(COMPANION.address, sizeof COMPANION.address, "%s", address);
+        if (secure) snprintf(COMPANION.url, sizeof COMPANION.url, "https://%s:%d/", address, COMPANION.port + 1);
+        else snprintf(COMPANION.url, sizeof COMPANION.url, "http://%s:%d/", address, COMPANION.port);
+        if (secure) snprintf(COMPANION.certificate, sizeof COMPANION.certificate, "http://%s:%d/ca.crt", address, COMPANION.port);
+        else COMPANION.certificate[0] = 0;
         COMPANION.size = qr_matrix(COMPANION.url);
         memcpy(COMPANION.qr, qr.dark, sizeof COMPANION.qr);
+        unlock();
     }
-    unlock();
+    pthread_mutex_unlock(&RENEW_LOCK);
 }
 
 static char *strip(char *text) {
@@ -1025,15 +1079,35 @@ static void json_profile(struct buf *json) {
     else buf_printf(json, "], \"start\": null}");
 }
 
-static void http_reply(int connection, int status, const char *content_type, const char *body, size_t length) {
+/* A panel request on the plain or the HTTPS port. */
+struct client {
+    int fd;
+    SSL *ssl;
+};
+
+static bool client_send(struct client *client, const void *data, size_t length) {
+    if (!client->ssl) return send_all(client->fd, data, length);
+    for (const char *at = data; length;) {
+        int sent = SSL_write(client->ssl, at, length > INT_MAX ? INT_MAX : (int)length);
+        if (sent <= 0) return false;
+        at += sent, length -= (size_t)sent;
+    }
+    return true;
+}
+
+static ssize_t client_receive(struct client *client, void *data, size_t length) {
+    return client->ssl ? SSL_read(client->ssl, data, length > INT_MAX ? INT_MAX : (int)length) : recv(client->fd, data, length, 0);
+}
+
+static void http_reply(struct client *connection, int status, const char *content_type, const char *body, size_t length) {
     char head[256];
     int head_length = snprintf(head, sizeof head, "HTTP/1.1 %d %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\n"
                                "Cache-Control: no-store\r\nConnection: close\r\n\r\n",
                                status, status == 200 ? "OK" : status == 404 ? "Not Found" : "Bad Request", content_type, length);
-    if (send_all(connection, head, (size_t)head_length)) send_all(connection, body, length);
+    if (client_send(connection, head, (size_t)head_length)) client_send(connection, body, length);
 }
 
-static void http_get(int connection, const char *path, const char *query) {
+static void http_get(struct client *connection, const char *path, const char *query) {
     struct buf json = {0};
     if (!strcmp(path, "/")) {
         char *panel = read_file(program_file("panel.html"));
@@ -1052,8 +1126,19 @@ static void http_get(int connection, const char *path, const char *query) {
             for (int x = 0; x < COMPANION.size; x++) buf_add(&json, COMPANION.qr[y][x] ? "1" : "0", 1);
             buf_add(&json, "\"", 1);
         }
-        buf_printf(&json, "]}");
+        buf_printf(&json, "], \"certificate\": ");
+        if (*COMPANION.certificate) buf_json_string(&json, COMPANION.certificate);
+        else buf_printf(&json, "null");
+        buf_printf(&json, "}");
         unlock();
+    } else if (!strcmp(path, "/ca.crt")) {
+        /* The certificate authority the phone installs once to trust the HTTPS panel. */
+        size_t length;
+        char *body = read_file_length(program_file("certs/ca.crt"), &length);
+        if (body) http_reply(connection, 200, "application/x-x509-ca-cert", body, length);
+        else http_reply(connection, 404, "text/plain", "not found\n", 10);
+        free(body);
+        return;
     } else if (!strcmp(path, "/data")) {
         const char *since_text = query ? strstr(query, "since=") : NULL;
         long since = since_text ? strtol(since_text + 6, NULL, 10) : 0;
@@ -1106,6 +1191,17 @@ static void http_get(int connection, const char *path, const char *query) {
         unlock();
         free_names(names, name_count);
     } else {
+        for (size_t i = 0; i < sizeof WEB_FILES / sizeof *WEB_FILES; i++) {
+            if (strcmp(path + 1, WEB_FILES[i].name)) continue;
+            char name[64];
+            size_t length;
+            snprintf(name, sizeof name, "web/%s", WEB_FILES[i].name);
+            char *body = read_file_length(program_file(name), &length);
+            if (body) http_reply(connection, 200, WEB_FILES[i].content_type, body, length);
+            else http_reply(connection, 404, "text/plain", "not found\n", 10);
+            free(body);
+            return;
+        }
         http_reply(connection, 404, "text/plain", "not found\n", 10);
         return;
     }
@@ -1113,7 +1209,7 @@ static void http_get(int connection, const char *path, const char *query) {
     free(json.text);
 }
 
-static void http_post(int connection, const char *path, const char *request) {
+static void http_post(struct client *connection, const char *path, const char *request) {
     const char *error = NULL;
     char name[256] = "", action[32] = "";
     double power;
@@ -1188,13 +1284,15 @@ static void http_post(int connection, const char *path, const char *request) {
 
 /* One request per connection. */
 static void *http_serve(void *argument) {
-    int connection = (int)(intptr_t)argument;
+    struct client *connection = argument;
     char request[65536];
     size_t length = 0;
     char *body = NULL;
-    setsockopt(connection, SOL_SOCKET, SO_RCVTIMEO, &(struct timeval){10, 0}, sizeof(struct timeval));
+    setsockopt(connection->fd, SOL_SOCKET, SO_RCVTIMEO, &(struct timeval){10, 0}, sizeof(struct timeval));
+    /* The handshake happens here, in the request's thread, so a stalled client cannot block the others. */
+    if (connection->ssl && SSL_accept(connection->ssl) != 1) length = sizeof request; /* nothing to read */
     while (!body && length < sizeof request - 1) {
-        ssize_t got = recv(connection, request + length, sizeof request - 1 - length, 0);
+        ssize_t got = client_receive(connection, request + length, sizeof request - 1 - length);
         if (got <= 0) break;
         request[length += (size_t)got] = 0;
         body = strstr(request, "\r\n\r\n");
@@ -1209,7 +1307,7 @@ static void *http_serve(void *argument) {
         }
         size_t have = length - (size_t)(body - request);
         while (have < expected && length < sizeof request - 1) {
-            ssize_t got = recv(connection, request + length, sizeof request - 1 - length, 0);
+            ssize_t got = client_receive(connection, request + length, sizeof request - 1 - length);
             if (got <= 0) break;
             request[length += (size_t)got] = 0;
             have += (size_t)got;
@@ -1220,21 +1318,57 @@ static void *http_serve(void *argument) {
         else if (!strcmp(method, "POST")) http_post(connection, target, body);
         else http_reply(connection, 400, "text/plain", "unsupported method\n", 19);
     }
-    close(connection);
+    if (connection->ssl) {
+        SSL_shutdown(connection->ssl);
+        SSL_free(connection->ssl);
+    }
+    close(connection->fd);
+    free(connection);
     return NULL;
 }
 
+/* Accept connections on one port; `secure` (the HTTPS port) wraps each in TLS. */
+struct listener {
+    int server;
+    bool secure;
+};
+
 static void *http_accept(void *argument) {
-    int server = (int)(intptr_t)argument;
+    struct listener *listener = argument;
     pthread_attr_t detached;
     pthread_attr_init(&detached);
     pthread_attr_setdetachstate(&detached, PTHREAD_CREATE_DETACHED);
     for (;;) {
-        int connection = accept(server, NULL, NULL);
+        int fd = accept(listener->server, NULL, NULL);
+        if (fd < 0) continue;
+        struct client *connection = malloc(sizeof *connection);
+        connection->fd = fd;
+        connection->ssl = NULL;
+        if (listener->secure) {
+            lock();
+            connection->ssl = SSL_new(TLS);
+            unlock();
+            SSL_set_fd(connection->ssl, fd);
+        }
         pthread_t thread;
-        if (connection >= 0 && pthread_create(&thread, &detached, http_serve, (void *)(intptr_t)connection)) close(connection);
+        if (pthread_create(&thread, &detached, http_serve, connection)) {
+            if (connection->ssl) SSL_free(connection->ssl);
+            close(fd);
+            free(connection);
+        }
     }
     return NULL;
+}
+
+static int listen_on(int port) {
+    int server = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in everywhere = {.sin_family = AF_INET, .sin_port = htons((uint16_t)port), .sin_addr.s_addr = htonl(INADDR_ANY)};
+    setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
+    if (server < 0 || bind(server, (struct sockaddr *)&everywhere, sizeof everywhere) || listen(server, 16)) {
+        fprintf(stderr, "Panel on port %d: %s\n", port, strerror(errno));
+        exit(1);
+    }
+    return server;
 }
 
 static void run_detached(char *const arguments[]) {
@@ -1250,19 +1384,19 @@ static void start_panel(int port, bool open_browser) {
     COMPANION.port = port;
     update_companion();
 
-    int server = socket(AF_INET, SOCK_STREAM, 0);
-    struct sockaddr_in everywhere = {.sin_family = AF_INET, .sin_port = htons((uint16_t)port), .sin_addr.s_addr = htonl(INADDR_ANY)};
-    setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
-    if (server < 0 || bind(server, (struct sockaddr *)&everywhere, sizeof everywhere) || listen(server, 16)) {
-        fprintf(stderr, "Panel on port %d: %s\n", port, strerror(errno));
-        exit(1);
-    }
+    static struct listener plain, secure = {.secure = true};
+    plain.server = listen_on(port);
     pthread_t thread;
-    pthread_create(&thread, NULL, http_accept, (void *)(intptr_t)server);
+    pthread_create(&thread, NULL, http_accept, &plain);
+    if (TLS) {
+        secure.server = listen_on(port + 1);
+        pthread_create(&thread, NULL, http_accept, &secure);
+    }
     if (*MQTT_HOST && *MQTT_PORT) pthread_create(&thread, NULL, follow_temperature, NULL);
     snprintf(url, sizeof url, "http://127.0.0.1:%d/", port);
     printf("Panel: %s\nPhone: %s\n", url, COMPANION.url);
     qr_print();
+    if (*COMPANION.certificate) printf("Certificate for the phone (install once): %s\n", COMPANION.certificate);
     if (open_browser) {
 #ifdef __APPLE__
         run_detached((char *[]){"open", url, NULL});
