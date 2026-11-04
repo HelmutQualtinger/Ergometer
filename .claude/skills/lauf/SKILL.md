@@ -7,7 +7,8 @@ description: >
   Use this whenever the user wants the last ride (or named logs) visualised, summarised,
   judged or stored - "visualisiere den letzten Lauf", "lege in Training ab", "trag den Lauf
   ein", "Zusammenfassung des Laufs", "wie war die Fahrt", "mach einen Eintrag aus dem Log" -
-  also when they only give a blood pressure reading right after riding. Not for step tests
+  also when they only give a blood pressure reading right after riding, and for "analyse the
+  last run, update the calendar and the training log, push both repos". Not for step tests
   that should be rated against reference data; that is the stufentest skill.
 ---
 
@@ -78,6 +79,36 @@ open logs/lauf-<timestamp>.html
 
 The page is written next to the first log and needs no server. With `--training` the script
 also regenerates `~/training/training.pdf` (about 10 seconds).
+
+## Detailed analysis
+
+When the user asks for a detailed analysis, compare each section with the last ride of the same
+profile (grep the note in `training_log.csv` for the `Vorgabe` name, then its log): mean power,
+cadence in the first and second half, pulse at start, end and maximum, room temperature. Put
+what stands out into `--assessment` paragraphs. A short peak in the first seconds with a high
+`resistance` is the bike's leftover level before the first write, not a real effort - say so
+when it sets `Watt_Max`.
+
+## Calendar and push
+
+After a ride is filed (or a row changed with `--rr`/`--note`), refresh the calendar:
+
+```bash
+python3 kalender.py
+```
+
+When the user asks to commit or push, commit only these paths, never the rest of `logs/`
+(recordings with heart rate, zips) and never unrelated working-tree changes:
+
+```bash
+git add logs/index.html logs/pages.json logs/lauf-<timestamp>.html
+git commit -m "Add the ride of <d Month> and refresh the training calendar" && git push
+cd ~/training && git add training_log.csv training.pdf
+git commit -m "Add ergometer ride of <d Month> (Nr <n>)" && git push
+```
+
+Later corrections use messages like "Add the blood pressure of the ride of 3 November" /
+"Blood pressure after the ride of 3 November (Nr 168)".
 
 ## Report
 
