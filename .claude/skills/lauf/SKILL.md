@@ -87,7 +87,11 @@ profile (grep the note in `training_log.csv` for the `Vorgabe` name, then its lo
 cadence in the first and second half, pulse at start, end and maximum, room temperature. Put
 what stands out into `--assessment` paragraphs. A short peak in the first seconds with a high
 `resistance` is the bike's leftover level before the first write, not a real effort - say so
-when it sets `Watt_Max`.
+when it sets `Watt_Max`. The same goes for a spike of a fraction of a second at a section change,
+where a high level meets a rising cadence. If no earlier ride of that `Vorgabe` has a log, compare
+with the nearest similar entry in `training_log.csv` (same structure, e.g. `HIT 10x(30:60)`) from its
+row alone, and say that only the row was available. Check the training log for another session on
+the same day (often a Kinomap ride) and mention it in the assessment and the note.
 
 ## Calendar and push
 
