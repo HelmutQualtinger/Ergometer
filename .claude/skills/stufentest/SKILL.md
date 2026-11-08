@@ -69,12 +69,12 @@ Look at the printed stage list, because the script evaluates whatever log it is 
 Answer in the user's language, lead with the result, and keep the caveats that change how the
 numbers should be read:
 
-- maximum power in W and W/kg, and its percentile among men of the same age decade;
+- maximum power in W/kg (with the W behind it), and the W/kg percentile among men of the same age decade;
 - estimated VO2max in ml/kg/min with its percentile, and the German group's median and P95;
 - the fit (pulse = a + b x power) and r;
 - which comparisons are measured quantiles and which are computed: FRIEND publishes VO2peak
-  deciles, but only mean and SD for the peak workload, so that percentile assumes a normal
-  distribution; the rider's VO2max is estimated from the power (ACSM), not measured;
+  deciles but no W/kg, so the W/kg deciles are derived from them through the group's ratio of
+  mean peak workload to mean VO2peak; the rider's VO2max is estimated from the power (ACSM), not measured;
 - with a beta blocker: the heart rate says nothing about fitness or effort.
 
 These are numbers from a home test. Say what they show; do not present them as a medical

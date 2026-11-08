@@ -189,7 +189,7 @@ python3 stufentest.py --age 50 --weight 80 --betablocker
 
 Das wertet die jüngste Aufzeichnung in `logs/` als Stufentest aus (oder eine als Argument genannte Datei) und schreibt daneben `stufentest-<jj-mm-tt-hh-mm-ss>.html` mit Plotly-Diagrammen:
 
-- maximale Leistung und daraus geschätzte VO₂max
+- maximale Leistung je kg und daraus geschätzte VO₂max
 - Einordnung in die gemessenen Verteilungen von Männern desselben Alters, mit Quantilen: FRIEND-Register (USA, Kaminsky et al. 2022) und SHIP (Deutschland, Koch et al. 2009)
 - Puls gegen Leistung mit Ausgleichsgerade, dazu Leistungs- und Pulsverlauf und die Stufentabelle
 

@@ -15,7 +15,7 @@ import csv
 import json
 import subprocess
 from pathlib import Path
-from statistics import NormalDist, mean
+from statistics import mean
 
 STEADY_SECONDS = 60   # a stage is judged by the mean of its last minute
 MIN_CADENCE = 40      # rpm; below this the rider has given up
@@ -102,7 +102,9 @@ def reference(age: float, weight: float, height: float | None, p_max: float, vo2
     """Place the result in the measured distributions of men of the same age."""
     decade = min(max(int(age // 10) * 10, 20), 80)
     n, friend_weight, deciles, absolute, workload, pulse = FRIEND[decade]
-    normal = {key: NormalDist(*pair) for key, pair in (("absolute", absolute), ("workload", workload), ("weight", friend_weight))}
+    # FRIEND publishes no W/kg. Its VO2peak deciles become W/kg through the group's own ratio of
+    # mean peak workload to mean VO2peak, which assumes that ratio holds across the group.
+    power_deciles = [d * workload[0] / (absolute[0] * 1000) for d in deciles]
 
     # Without a height the BMI is unknown; 81 kg is a BMI of 25 at 1.80 m.
     bmi = weight / (height / 100) ** 2 if height else None
@@ -114,11 +116,8 @@ def reference(age: float, weight: float, height: float | None, p_max: float, vo2
         "friend": {
             "n": n, "weight": friend_weight, "deciles": deciles, "absolute": absolute, "workload": workload, "pulse": pulse,
             "vo2_percentile": percentile_from_deciles(vo2, deciles),
-            # Only mean and SD are published for these, so the percentile assumes a normal distribution.
-            "workload_percentile": normal["workload"].cdf(p_max) * 100,
-            "absolute_percentile": normal["absolute"].cdf(vo2 * weight / 1000) * 100,
-            "weight_percentile": normal["weight"].cdf(weight) * 100,
-            "workload_quantiles": {p: normal["workload"].inv_cdf(p / 100) for p in (5, 10, 25, 50, 75, 90, 95)},
+            "power_deciles": power_deciles,
+            "power_percentile": percentile_from_deciles(p_max / weight, power_deciles),
         },
         "ship": {
             "group": ["25–34", "35–44", "45–54", "55–64", "ab 64"][group - 1], "bmi_over_25": over, "bmi": bmi,
@@ -276,7 +275,7 @@ PAGE = """<!doctype html>
 <h2 class="section wide newpage">Vergleich mit Männern desselben Alters</h2>
 <section class="card wide"><h2>Beurteilung</h2><ul id="verdict"></ul></section>
 <section class="pair">
-  <div class="card"><h2>Maximale Leistung im Vergleich</h2><div class="note" id="workload-note"></div><div class="plot" id="workload"></div></div>
+  <div class="card"><h2>Verteilung der Leistung je kg</h2><div class="note" id="workload-note"></div><div class="plot" id="workload"></div></div>
   <div class="card"><h2>VO₂max je Kilogramm im Vergleich</h2><div class="note" id="vo2-note"></div><div class="plot" id="vo2"></div></div>
 </section>
 <section class="card wide"><h2>Quantile der Vergleichsgruppen</h2><div class="note" id="quantile-note"></div><div class="scroll"><table id="quantiles"></table></div></section>
@@ -292,7 +291,8 @@ const fit = (watts) => D.intercept + D.slope * watts;
 const last = D.stages[D.stages.length - 1];
 const ages = `${D.reference.decade} bis ${D.reference.decade + 9}`;
 // "P91": the share of the comparison group with a lower value.
-const rank = (p) => p === null ? (D.vo2 < F.deciles[0] ? "unter P10" : "über P90") : `P${n(Math.min(Math.max(p, 1), 99))}`;
+const rank = (p, low = D.vo2 < F.deciles[0]) => p === null ? (low ? "unter P10" : "über P90") : `P${n(Math.min(Math.max(p, 1), 99))}`;
+const wkg = D.p_max / D.weight, powerRank = rank(F.power_percentile, wkg < F.power_deciles[0]);
 const better = (p) => `${n(100 - Math.min(Math.max(p, 1), 99))} von 100`;
 const shipRange = D.vo2 > S.per_kg[95] ? "über P95" : D.vo2 > S.per_kg[50] ? "zwischen Median und P95" : D.vo2 > S.per_kg[5] ? "zwischen P5 und Median" : "unter P5";
 
@@ -302,7 +302,7 @@ document.getElementById("sub").textContent =
   `Abbruch nach ${clock(D.duration)} min in der Stufe ${last.target} W`;
 
 document.getElementById("tiles").innerHTML = [
-  ["Maximale Leistung", n(D.p_max), "W", `${n(D.p_max / D.weight, 2)} W/kg`],
+  ["Maximale Leistung", n(wkg, 2), "W/kg", `${n(D.p_max)} W bei ${n(D.weight)} kg`],
   ["Dauer", clock(D.duration), "min", `${D.stages.filter((s) => s.complete).length} volle Stufen, Abbruch bei ${last.target} W`],
   ["Höchster Puls", n(D.pulse_max), "bpm", D.betablocker ? "unter Betablocker" : `${n(D.pulse_max / D.pulse_max_expected * 100)} % von 220 − Alter`],
   ["VO₂max, geschätzt", n(D.vo2, 1), "ml/kg/min", `${n(D.vo2_abs, 1)} l/min, aus der Leistung berechnet`],
@@ -311,12 +311,10 @@ document.getElementById("tiles").innerHTML = [
   `<div class="card"><div class="label">${label}</div><div class="value">${value} <small>${unit}</small></div><div class="note">${note}</div></div>`).join("");
 
 document.getElementById("verdict").innerHTML = [
-  `<b>Leistung: besser als etwa ${n(Math.min(F.workload_percentile, 99))} von 100 Männern deines Alters.</b> Gemessen wurden bei ${n(F.n)} Männern
-   von ${ages} Jahren im Mittel ${n(F.workload[0])} ± ${n(F.workload[1])} W; deine ${n(D.p_max)} W liegen bei ${rank(F.workload_percentile)}.
-   Die absolute Leistung begünstigt schwere Fahrer: Mit ${n(D.weight)} kg wiegst du mehr als etwa ${n(F.weight_percentile)} % dieser Gruppe
-   (Mittel ${n(F.weight[0])} kg).`,
-  `<b>Bezogen auf das Gewicht: ${rank(F.vo2_percentile)} in der US-Gruppe, ${shipRange} in der deutschen.</b> Die geschätzte VO₂max von
-   ${n(D.vo2, 1)} ml/kg/min teilt die Leistung durch dein Gewicht, das Mehrgewicht ist hier also eingerechnet. In der deutschen Gruppe
+  `<b>Leistung je kg: ${powerRank} unter ${n(F.n)} Männern von ${ages} Jahren.</b> Deine ${n(wkg, 2)} W/kg stehen einem Median von ${n(F.power_deciles[4], 2)} und
+   einem P90 von ${n(F.power_deciles[8], 2)} W/kg gegenüber. Der Vergleich rechnet das Körpergewicht ein, schwere Fahrer sind also nicht begünstigt.`,
+  `<b>VO₂max: ${rank(F.vo2_percentile)} in der US-Gruppe, ${shipRange} in der deutschen.</b> Die ${n(D.vo2, 1)} ml/kg/min sind mit der ACSM-Formel aus der
+   Leistung geschätzt und liegen dadurch höher als der Wert, der in den Vergleichsgruppen zu dieser Leistung gemessen wurde. In der deutschen Gruppe
    (gesunde Männer ${S.group}, BMI ${S.bmi_over_25 ? "über" : "bis"} 25) liegt der Median bei ${n(S.per_kg[50], 1)} und P95 bei ${n(S.per_kg[95], 1)} ml/kg/min.`,
   D.betablocker
     ? `<b>Der Puls taugt unter Betablocker nicht als Maßstab.</b> Der flache Anstieg (${n(D.slope * 25, 1)} Schläge je 25 W) und der niedrige
@@ -328,25 +326,26 @@ document.getElementById("verdict").innerHTML = [
        Mittel ${n(F.pulse[0])} ± ${n(F.pulse[1])} bpm.`,
   `<b>Die Einordnung ist eher vorsichtig.</b> Die Vergleichswerte stammen aus Tests bis zur Erschöpfung${D.betablocker ? ", überwiegend ohne Betablocker, der die Höchstleistung etwas senken kann" : ""}.
    Ob dein Test ausbelastet war, lässt sich aus den Daten ${D.betablocker ? "ohne verwertbaren Puls " : ""}nicht ablesen. Die VO₂max ist aus der Leistung
-   geschätzt, in den Vergleichsgruppen wurde sie gemessen; die maximale Leistung ist dagegen direkt vergleichbar.`,
+   geschätzt, in den Vergleichsgruppen wurde sie gemessen. Die W/kg-Verteilung ist abgeleitet, siehe die Anmerkung am Diagramm.`,
 ].map((text) => `<li>${text}</li>`).join("");
 
 document.getElementById("workload-note").textContent =
-  `Männer ${ages} Jahre, USA (FRIEND), n = ${n(F.n)}: ${n(F.workload[0])} ± ${n(F.workload[1])} W gemessen. Veröffentlicht sind nur Mittelwert und Streuung; ` +
-  `die Kurve nimmt eine Normalverteilung an.`;
+  `Männer ${ages} Jahre, USA (FRIEND), n = ${n(F.n)}; feiner nach Alter ist nichts veröffentlicht. Jeder Balken ist ein Dezil, also 10 % der Gruppe. ` +
+  `Je 10 % liegen unter ${n(F.power_deciles[0], 2)} und über ${n(F.power_deciles[8], 2)} W/kg und sind nicht gezeichnet, weil die Ränder nicht veröffentlicht sind. ` +
+  `W/kg sind aus den gemessenen VO₂peak-Dezilen abgeleitet, mit dem Verhältnis der Gruppenmittel (${n(F.workload[0])} W zu ${n(F.absolute[0], 2)} l/min).`;
 document.getElementById("vo2-note").textContent =
   `FRIEND: gemessene Dezile, Männer ${ages} Jahre (n = ${n(F.n)}, im Mittel ${n(F.weight[0])} kg). SHIP: gesunde Männer ${S.group}, ` +
   `BMI ${S.bmi_over_25 ? "über" : "bis"} 25${D.height ? "" : " (ohne Größenangabe aus dem Gewicht angenommen)"}.`;
 
 const P = [5, 10, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90, 95];
 const cell = (value, digits) => value === undefined ? "<td>–</td>" : `<td>${n(value, digits)}</td>`;
-const decile = (p) => p % 10 === 0 && p >= 10 && p <= 90 ? F.deciles[p / 10 - 1] : undefined;
+const decile = (deciles) => (p) => p % 10 === 0 && p >= 10 && p <= 90 ? deciles[p / 10 - 1] : undefined;
 document.getElementById("quantile-note").textContent =
-  "Pxx heißt: xx % der Gruppe liegen darunter. Leere Felder sind nicht veröffentlicht. Die Leistung ist aus Mittelwert und Streuung berechnet, alles andere gemessen.";
+  "Pxx heißt: xx % der Gruppe liegen darunter. Leere Felder sind nicht veröffentlicht. Die Leistung je kg ist aus den VO₂peak-Dezilen abgeleitet, alles andere gemessen.";
 document.getElementById("quantiles").innerHTML =
   `<tr><th></th>${P.map((p) => `<th>P${p}</th>`).join("")}<th>Du</th><th>Dein Rang</th></tr>` + [
-    [`Maximale Leistung (W), FRIEND, Männer ${ages}`, (p) => F.workload_quantiles[p], 0, n(D.p_max), rank(F.workload_percentile)],
-    [`VO₂max (ml/kg/min), FRIEND, Männer ${ages}`, decile, 1, n(D.vo2, 1), rank(F.vo2_percentile)],
+    [`Maximale Leistung (W/kg), FRIEND, Männer ${ages}`, decile(F.power_deciles), 2, n(wkg, 2), powerRank],
+    [`VO₂max (ml/kg/min), FRIEND, Männer ${ages}`, decile(F.deciles), 1, n(D.vo2, 1), rank(F.vo2_percentile)],
     [`VO₂max (ml/kg/min), SHIP, Männer ${S.group}, BMI ${S.bmi_over_25 ? ">" : "≤"} 25`, (p) => S.per_kg[p], 1, n(D.vo2, 1), shipRange],
     [`VO₂max (l/min), SHIP, Männer ${S.group}`, (p) => S.absolute[p], 2, n(D.vo2_abs, 2),
      D.vo2_abs > S.absolute[95] ? "über P95" : D.vo2_abs > S.absolute[50] ? "zwischen Median und P95" : "unter dem Median"],
@@ -363,15 +362,11 @@ document.getElementById("stages").innerHTML =
     <td>${n(s.cadence)} rpm</td><td>${s.pulse ? n(s.pulse, 1) + " bpm" : "kein Signal"}</td><td>${n(fit(s.power), 1)} bpm</td></tr>`).join("");
 
 document.getElementById("method").innerHTML =
-  "Maximale Leistung: letzte volle Stufe plus der Zeitanteil der abgebrochenen Stufe. VO₂max: ACSM-Formel für das Fahrradergometer (10,8 × W/kg + 7). " +
+  "Maximale Leistung: letzte volle Stufe plus der Zeitanteil der abgebrochenen Stufe, geteilt durch das Körpergewicht. VO₂max: ACSM-Formel für das Fahrradergometer (10,8 × W/kg + 7). " +
   "Vergleichsdaten: <a href='https://doi.org/10.1016/j.mayocp.2021.08.020'>FRIEND-Register, Kaminsky et al., Mayo Clin Proc 2022</a> " +
   "(Fahrradergometrie mit Atemgasmessung, Männer ohne Herz-Kreislauf-Erkrankung, USA) und " +
   "<a href='https://doi.org/10.1183/09031936.00074208'>SHIP, Koch et al., Eur Respir J 2009</a> (534 gesunde Erwachsene, Vorpommern, Quantilsregression). " +
   "Alle Werte stammen aus einem Heimtest und ersetzen keine ärztliche Ergometrie.";
-
-// Standard normal distribution function (Abramowitz-Stegun), for the workload curve.
-const phi = (z) => { const t = 1 / (1 + 0.2316419 * Math.abs(z)), d = 0.3989423 * Math.exp(-z * z / 2);
-  const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); return z > 0 ? 1 - p : p; };
 
 function draw() {
   const ink = css("--ink-2"), s1 = css("--series-1"), s2 = css("--series-2"), surface = css("--surface"), strong = css("--ink");
@@ -396,12 +391,14 @@ function draw() {
   const share = { ...axis, title: { text: "Anteil darunter (%)", standoff: axis.title.standoff }, range: [0, 100], dtick: 25 };
   const top = { l: compact ? 40 : 52, r: 12, t: compact ? 18 : 26, b: compact ? 32 : 44 };
 
-  const [mu, sd] = F.workload, watts = Array.from({ length: 81 }, (_, i) => mu - 3 * sd + i * sd * 6 / 80).filter((w) => w > 0);
+  // One bar per decile: each holds 10 % of the group, so a narrow bar is a tall one.
+  const bars = F.power_deciles.slice(1).map((high, i) => ({ low: F.power_deciles[i], high, p: 10 * (i + 1) }));
   Plotly.react("workload", [
-    { x: watts, y: watts.map((w) => 100 * phi((w - mu) / sd)), mode: "lines", line: { color: s1, width: 2 },
-      hovertemplate: "%{x:.0f} W: %{y:.0f} % liegen darunter<extra></extra>" },
-  ], layout("Maximale Leistung (W)", "", { showlegend: false, hovermode: "closest", yaxis: share, margin: top,
-                                            ...you(D.p_max, `Du: ${n(D.p_max)} W, ${rank(F.workload_percentile)}`) }), config);
+    { type: "bar", x: bars.map((b) => (b.low + b.high) / 2), width: bars.map((b) => b.high - b.low), y: bars.map((b) => 1 / (b.high - b.low)),
+      customdata: bars.map((b) => [b.low, b.high, b.p, b.p + 10]), marker: { color: s1, line: { color: surface, width: 2 } },
+      hovertemplate: "%{customdata[0]:.2f} bis %{customdata[1]:.2f} W/kg: 10 % der Gruppe (P%{customdata[2]} bis P%{customdata[3]})<extra></extra>" },
+  ], layout("Maximale Leistung (W/kg)", "Anteil je 0,1 W/kg (%)", { showlegend: false, hovermode: "closest", margin: top, xaxis: { ...axis, title: { text: "Maximale Leistung (W/kg)", standoff: axis.title.standoff }, showgrid: false, range: [0.9, 2.8] },
+                                              ...you(wkg, `Du: ${n(wkg, 2)} W/kg, ${powerRank}`) }), config);
 
   Plotly.react("vo2", [
     { name: "FRIEND (USA), gemessene Dezile", x: F.deciles, y: F.deciles.map((_, i) => 10 * (i + 1)), mode: "lines+markers",
@@ -471,14 +468,14 @@ def main():
     out.write_text(PAGE.replace("__DATE__", date).replace("__SMOOTH__", str(SMOOTH_SECONDS)).replace("__DATA__", json.dumps(result)))
 
     friend, ship = result["reference"]["friend"], result["reference"]["ship"]
+    rank = lambda p: f"P{p:.0f}" if p else "outside P10-P90"
     for stage in result["stages"]:
         pulse = f"{stage['pulse']:.1f} bpm" if stage["pulse"] else "no pulse"
         print(f"{stage['target']:4.0f} W  {stage['duration']:4.0f} s  {stage['power']:4.0f} W  {pulse}")
     print(f"pulse = {result['intercept']:.1f} + {result['slope']:.3f} x power, r = {result['r']:.3f}")
-    print(f"max power {result['p_max']:.0f} W ({result['p_max'] / args.weight:.2f} W/kg): P{friend['workload_percentile']:.0f} "
-          f"of men {result['reference']['decade']}-{result['reference']['decade'] + 9} (FRIEND {friend['workload'][0]} +- {friend['workload'][1]} W, normal approximation)")
-    vo2_rank = f"P{friend['vo2_percentile']:.0f}" if friend["vo2_percentile"] else "outside P10-P90"
-    print(f"VO2max {result['vo2']:.1f} ml/kg/min (estimated): {vo2_rank} in FRIEND, deciles {friend['deciles']}")
+    print(f"max power {result['p_max']:.0f} W, {result['p_max'] / args.weight:.2f} W/kg: {rank(friend['power_percentile'])} "
+          f"of men {result['reference']['decade']}-{result['reference']['decade'] + 9} (FRIEND, derived deciles {[round(d, 2) for d in friend['power_deciles']]})")
+    print(f"VO2max {result['vo2']:.1f} ml/kg/min (estimated): {rank(friend['vo2_percentile'])} in FRIEND, deciles {friend['deciles']}")
     print(f"SHIP men {ship['group']}, BMI {'>' if ship['bmi_over_25'] else '<='} 25: " +
           ", ".join(f"P{p} {value:.1f}" for p, value in ship["per_kg"].items()) + " ml/kg/min")
     print(out)
