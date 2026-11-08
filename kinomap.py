@@ -4,6 +4,7 @@
 Usage:
     python3 kinomap.py ~/training/cern.zip
     python3 kinomap.py ~/training/cern.zip --betablocker --ftp 200
+    python3 kinomap.py logs/köln.zip --betablocker --training --rr 138/81/93 --temperature 24 --note "..."
 
 The export is the zip Kinomap offers for an activity (.csv, .tcx, .gpx and .pwx of the same ride, one
 sample per second). Such a ride follows a video and has no target power, so the page shows what a
@@ -11,8 +12,9 @@ free ride can be judged by: the power against the FTP, its best mean values per 
 each intensity step of the calendar, and pulse, cadence, speed and altitude over the ride.
 
 The page lands in logs/ as kinomap-<yy-mm-dd-hh-mm-ss>.html, named after the local start time, where
-kalender.py finds it and links it to the session of the training log. Nothing is written to the
-training log: the ride is filed there with that project's add-training script.
+kalender.py finds it and links it to the session of the training log. With --training the ride is
+filed there too: the script writes the summary Kinomap shows on screen and hands it to that project's
+add-training script, which appends the row (Kinomap column, record watt) and regenerates training.pdf.
 """
 
 import argparse
@@ -21,6 +23,8 @@ import html
 import io
 import json
 import re
+import subprocess
+import sys
 import zipfile
 from datetime import datetime
 from itertools import accumulate
@@ -37,6 +41,7 @@ CURVE = [1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 300, 420, 600, 900, 1
 EFFICIENCY = 0.25     # share of the energy turned over that reaches the pedals; as in training_log.csv
 MATCH_SECONDS = 60    # as in kalender.py: how far the duration in the training log may be off
 TRAINING = Path.home() / "training"  # the training log project
+ADD_TRAINING = TRAINING / ".claude/skills/add-training/scripts/add_training.py"
 
 
 def read_export(path: Path) -> tuple[list[dict], dict]:
@@ -86,6 +91,21 @@ def logged(day: str, kcal: float, seconds: float) -> dict | None:
             if row["Datum"] == day and row["Kcal"] == f"{kcal:.0f}" and abs(float(row["Dauer_sek"] or 0) - seconds) <= MATCH_SECONDS:
                 return row
     return None
+
+
+def summary(result: dict, start: datetime, cadence_max: float, temperature: float | None, rr: str | None, note: str | None) -> str:
+    """The ride as Kinomap's summary screen, the input add_training.py --paste reads."""
+    seconds = round(result["seconds"])
+    equipment = " ".join(["AX 4000"] + ([f"pulse {result['pulse_max']:.0f}"] if result["pulse_max"] else [])
+                         + ([f"temp {temperature:.0f}"] if temperature is not None else []) + ([f"bldr {rr}"] if rr else []) + ([note] if note else []))
+    return "\n".join([
+        f"{start:%d.%m.%Y %H:%M}", result["route"] or "Kinomap", f"{result['distance']:.2f}",
+        "Geschwindigkeit", "Avr.", f"{result['speed']:.1f} km/h", "Max.", f"{result['speed_max']:.1f} km/h",
+        "Leistung", "Avr.", f"{result['power']:.0f} Watts", "Max.", f"{result['power_max']:.0f} Watts",
+        "Kadenz", "Avr.", f"{result['cadence']:.0f} rpm", "Max.", f"{cadence_max:.0f} rpm",
+        "Entfernung", f"{result['distance']:.2f} km", "Erhebungen", f"{result['climb']:.0f} m",
+        "Dauer", f"{seconds // 3600:02d}:{seconds // 60 % 60:02d}:{seconds % 60:02d}", "Kalorien", f"{result['kcal']:.0f} kcal",
+        "Ausstattung", equipment])
 
 
 def analyse(rows: list[dict], facts: dict, ftp: float, betablocker: bool) -> dict:
@@ -326,10 +346,21 @@ def main():
     parser.add_argument("--ftp", type=float, default=FTP, help=f"functional threshold power in watts (default {FTP})")
     parser.add_argument("--betablocker", action="store_true", help="the rider takes a beta blocker: the pulse is not judged")
     parser.add_argument("--assessment", action="append", default=[], help="a paragraph of assessment for the page, in words; repeat for more paragraphs")
+    parser.add_argument("--training", action="store_true", help="file the ride in ~/training/training_log.csv (not twice)")
+    parser.add_argument("--rr", help="blood pressure after the ride, SYS/DIA/PULSE, for the training log")
+    parser.add_argument("--temperature", type=float, help="room temperature in °C, for the training log")
+    parser.add_argument("--note", help="comment for the training log")
     args = parser.parse_args()
 
     rows, facts = read_export(args.zip)
     result = analyse(rows, facts, args.ftp, args.betablocker)
+    if args.training and facts["start"] and not result["entry"]:
+        paste = summary(result, facts["start"], max(row["cadence"] for row in rows), args.temperature, args.rr, args.note)
+        done = subprocess.run([sys.executable, str(ADD_TRAINING), "--paste"], input=paste, capture_output=True, text=True, cwd=TRAINING)
+        if done.returncode:
+            sys.exit(f"add_training.py failed: {done.stdout}{done.stderr}")
+        result = analyse(rows, facts, args.ftp, args.betablocker)
+        print(f"training log: Nr {result['entry']['Nr'] if result['entry'] else '?'} added")
     result["assessment"] = args.assessment
     start = facts["start"] or datetime.fromtimestamp(args.zip.stat().st_mtime)
     out = Path(__file__).with_name("logs") / f"kinomap-{start:%y-%m-%d-%H-%M-%S}.html"
