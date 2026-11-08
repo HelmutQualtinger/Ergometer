@@ -91,4 +91,5 @@ All pages embed their data; the generated files are personal and git-ignored.
 
 - New profiles or user-visible features get a line in `README.md` (German).
 - The README's "Installation" and "Handy als Fernbedienung" sections (setup, operation, troubleshooting table, security) describe the phone companion; keep them in step with changes to `start_panel()`, `update_companion()`, `local_address()`, `/qr` and the phone-specific parts of `panel.html`.
+- Don't exit when the ergometer is absent or unreachable; retry the connection every 30 s (both Python and C versions).
 - `logs/` holds the user's own recordings, including heart rate. The GitHub repo is public; do not commit that directory unless asked.
