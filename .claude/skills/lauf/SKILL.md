@@ -93,7 +93,8 @@ where a high level meets a rising cadence. When the cadence reads 0 for a few se
 log, the controller drives the level up (to 20 or more) and the rider restarts against it; report
 the pause and that artefact, not a hard effort. When the user names a duration ("the 40 minute
 run"), pick the log of that length and mention short logs right before or after it (a false start,
-a stop) without joining them. For a manual ride, compare with the planned day in the latest
+a stop) without joining them. If no log of today has that length (a typo, "4 minute" for a
+24-minute log), ask which log is meant instead of guessing. For a manual ride, compare with the planned day in the latest
 `~/training/trainingsplan_*.md` and with recent rides of the same kind at similar power. If no earlier ride of that `Vorgabe` has a log, compare
 with the nearest similar entry in `training_log.csv` (same structure, e.g. `HIT 10x(30:60)`) from its
 row alone, and say that only the row was available. Check the training log for another session on
