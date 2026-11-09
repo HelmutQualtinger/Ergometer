@@ -8,7 +8,8 @@ description: >
   judged or stored - "visualisiere den letzten Lauf", "lege in Training ab", "trag den Lauf
   ein", "Zusammenfassung des Laufs", "wie war die Fahrt", "mach einen Eintrag aus dem Log" -
   also when they only give a blood pressure reading right after riding, and for "analyse the
-  last run, update the calendar and the training log, push both repos". Not for step tests
+  last run, update the calendar and the training log, push both repos" or "analyse the last
+  40 minute run from today in detail, bldr 127/78/90" (bldr = blood pressure). Not for step tests
   that should be rated against reference data; that is the stufentest skill.
 ---
 
@@ -88,7 +89,12 @@ cadence in the first and second half, pulse at start, end and maximum, room temp
 what stands out into `--assessment` paragraphs. A short peak in the first seconds with a high
 `resistance` is the bike's leftover level before the first write, not a real effort - say so
 when it sets `Watt_Max`. The same goes for a spike of a fraction of a second at a section change,
-where a high level meets a rising cadence. If no earlier ride of that `Vorgabe` has a log, compare
+where a high level meets a rising cadence. When the cadence reads 0 for a few seconds inside a
+log, the controller drives the level up (to 20 or more) and the rider restarts against it; report
+the pause and that artefact, not a hard effort. When the user names a duration ("the 40 minute
+run"), pick the log of that length and mention short logs right before or after it (a false start,
+a stop) without joining them. For a manual ride, compare with the planned day in the latest
+`~/training/trainingsplan_*.md` and with recent rides of the same kind at similar power. If no earlier ride of that `Vorgabe` has a log, compare
 with the nearest similar entry in `training_log.csv` (same structure, e.g. `HIT 10x(30:60)`) from its
 row alone, and say that only the row was available. Check the training log for another session on
 the same day (often a Kinomap ride) and mention it in the assessment and the note.
