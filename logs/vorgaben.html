@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vorgaben</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  :root { color-scheme: light dark; --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+          --grid: #e1e0d9; --axis: #c3c2b7; --series-1: #2a78d6; --series-2: #eb6834; }
+  @media (prefers-color-scheme: dark) { :root { --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --grid: #2c2c2a;
+          --axis: #383835; --series-1: #3987e5; --series-2: #d95926; } }
+  body { margin: 0; padding: 20px 16px 40px; background: var(--page); color: var(--ink); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 16px; margin: 0 0 2px; }
+  .sub { color: var(--ink-2); margin: 2px 0 16px; }
+  .card { background: var(--surface); border: 1px solid var(--grid); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 4px 18px; font-variant-numeric: tabular-nums; margin: 4px 0; }
+  .facts b { font-size: 17px; }
+  .note { color: var(--ink-2); font-size: 13px; }
+  .plot { height: 220px; }
+  .index { columns: 2 260px; margin: 0; padding-left: 20px; }
+  .back { font-size: 13px; color: var(--ink-2); }
+  a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+<nav class="back"><a href="index.html">← Trainingskalender</a> · <a href="../../training/training.html">Trainingsübersicht</a></nav>
+<h1>Vorgaben</h1>
+<p class="sub">Alle Profile aus <code>profiles/</code>, Zielleistung über die Zeit; gestrichelt die FTP von 200 W</p>
+<section class="card"><ul class="index" id="index"></ul></section>
+<div id="profiles"></div>
+</main>
+<script>
+const P = [{"name": "hiit-20", "file": "vorgabe-hiit-20.csv", "seconds": 1200, "power": 129.0, "kj": 154.8, "max": 230, "above": 360, "description": "12 Runden aus 30 Sekunden bei 230 W und 30 Sekunden bei 80 W, davor 4 Minuten bei 100 W, danach 4 Minuten bei 80 W", "t": [0.0, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0, 10.5, 11.0, 11.5, 12.0, 12.5, 13.0, 13.5, 14.0, 14.5, 15.0, 15.5, 20.0], "watt": [100, 230, 80, 230, 80, 230, 80, 230, 80, 230, 80, 230, 80, 230, 80, 230, 80, 230, 80, 230, 80, 230, 80, 230, 80, 80]}, {"name": "hit", "file": "vorgabe-hit.csv", "seconds": 1500, "power": 117.8, "kj": 176.7, "max": 200, "above": 315, "description": "21 Zyklen aus 15 Sekunden bei 200 W und 45 Sekunden bei 100 W, davor und danach 2 Minuten bei 80 W", "t": [0.0, 2.0, 2.25, 3.0, 3.25, 4.0, 4.25, 5.0, 5.25, 6.0, 6.25, 7.0, 7.25, 8.0, 8.25, 9.0, 9.25, 10.0, 10.25, 11.0, 11.25, 12.0, 12.25, 13.0, 13.25, 14.0, 14.25, 15.0, 15.25, 16.0, 16.25, 17.0, 17.25, 18.0, 18.25, 19.0, 19.25, 20.0, 20.25, 21.0, 21.25, 22.0, 22.25, 23.0, 25.0], "watt": [80, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 80, 80]}, {"name": "intervall-1-3", "file": "vorgabe-intervall-1-3.csv", "seconds": 1440, "power": 117.5, "kj": 169.2, "max": 200, "above": 300, "description": "5 Zyklen aus 1 Minute bei 200 W und 3 Minuten bei 100 W, davor und danach 2 Minuten bei 80 W", "t": [0.0, 2.0, 3.0, 6.0, 7.0, 10.0, 11.0, 14.0, 15.0, 18.0, 19.0, 22.0, 24.0], "watt": [80, 200, 100, 200, 100, 200, 100, 200, 100, 200, 100, 80, 80]}, {"name": "intervall-30-30", "file": "vorgabe-intervall-30-30.csv", "seconds": 2040, "power": 137.64705882352942, "kj": 280.8, "max": 230, "above": 600, "description": "2 Serien aus je 10 Zyklen mit 30 Sekunden bei 230 W und 30 Sekunden bei 100 W, dazwischen 4 Minuten bei 100 W, davor 3 Minuten bei 100 W und 2 Minuten bei 140 W, danach 5 Minuten bei 80 W; kürzere Pausen als `sprint-30-60`, damit die Sauerstoffaufnahme zwischen den Intervallen hoch bleibt", "t": [0.0, 3.0, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0, 10.5, 11.0, 11.5, 12.0, 12.5, 13.0, 13.5, 14.0, 14.5, 15.0, 19.0, 19.5, 20.0, 20.5, 21.0, 21.5, 22.0, 22.5, 23.0, 23.5, 24.0, 24.5, 25.0, 25.5, 26.0, 26.5, 27.0, 27.5, 28.0, 28.5, 29.0, 34.0], "watt": [100, 140, 230, 100, 230, 100, 230, 100, 230, 100, 230, 100, 230, 100, 230, 100, 230, 100, 230, 100, 230, 100, 100, 230, 100, 230, 100, 230, 100, 230, 100, 230, 100, 230, 100, 230, 100, 230, 100, 230, 100, 230, 100, 80, 80]}, {"name": "intervall-4x3", "file": "vorgabe-intervall-4x3.csv", "seconds": 2040, "power": 148.23529411764707, "kj": 302.4, "max": 220, "above": 720, "description": "4 Intervalle von 3 Minuten bei 220 W (110 % einer FTP von 200 W) mit 3 Minuten bei 110 W dazwischen, davor je 4 Minuten bei 100 und 140 W, danach 5 Minuten bei 90 W", "t": [0.0, 4.0, 8.0, 11.0, 14.0, 17.0, 20.0, 23.0, 26.0, 29.0, 34.0], "watt": [100, 140, 220, 110, 220, 110, 220, 110, 220, 90, 90]}, {"name": "persoenlich-30", "file": "vorgabe-persoenlich-30.csv", "seconds": 1800, "power": 161.0, "kj": 289.8, "max": 200, "above": 900, "description": "3 Blöcke von 5 Minuten bei 200 W mit 2 Minuten bei 120 W dazwischen, 6 Minuten Einfahren in drei Stufen, 5 Minuten Ausfahren; aus einem Stufentest abgeleitet (85 % von 236 W)", "t": [0.0, 2.0, 4.0, 6.0, 11.0, 13.0, 18.0, 20.0, 25.0, 27.0, 30.0], "watt": [100, 130, 165, 200, 120, 200, 120, 200, 130, 100, 100]}, {"name": "roennestad-30-15", "file": "vorgabe-roennestad-30-15.csv", "seconds": 1950, "power": 160.0, "kj": 312.0, "max": 240, "above": 780, "description": "Mikrointervalle nach Rønnestad, 2 Serien aus je 13 Zyklen mit 30 Sekunden bei 240 W und 15 Sekunden bei 120 W (120 % und 60 % einer FTP von 200 W), dazwischen 3 Minuten bei 100 W, davor 4 Minuten bei 100 W und 2 Minuten bei 150 W, danach 4:30 Minuten bei 80 W", "t": [0.0, 4.0, 6.0, 6.5, 6.75, 7.25, 7.5, 8.0, 8.25, 8.75, 9.0, 9.5, 9.75, 10.25, 10.5, 11.0, 11.25, 11.75, 12.0, 12.5, 12.75, 13.25, 13.5, 14.0, 14.25, 14.75, 15.0, 15.5, 18.5, 19.0, 19.25, 19.75, 20.0, 20.5, 20.75, 21.25, 21.5, 22.0, 22.25, 22.75, 23.0, 23.5, 23.75, 24.25, 24.5, 25.0, 25.25, 25.75, 26.0, 26.5, 26.75, 27.25, 27.5, 28.0, 32.5], "watt": [100, 150, 240, 120, 240, 120, 240, 120, 240, 120, 240, 120, 240, 120, 240, 120, 240, 120, 240, 120, 240, 120, 240, 120, 240, 120, 240, 100, 240, 120, 240, 120, 240, 120, 240, 120, 240, 120, 240, 120, 240, 120, 240, 120, 240, 120, 240, 120, 240, 120, 240, 120, 240, 80, 80]}, {"name": "schwelle-3x8", "file": "vorgabe-schwelle-3x8.csv", "seconds": 2700, "power": 162.0, "kj": 437.4, "max": 200, "above": 480, "description": "3 Blöcke von 8 Minuten bei 195, 195 und 200 W mit 3 Minuten bei 120 W dazwischen, 10 Minuten Einfahren (5 Minuten bei 120 W, 5 Minuten bei 140 W), 5 Minuten Ausfahren bei 110 W; Steigerung von `persoenlich-30` zur Vorbereitung auf 200 W über 30–40 Minuten", "t": [0.0, 5.0, 10.0, 18.0, 21.0, 29.0, 32.0, 40.0, 45.0], "watt": [120, 140, 195, 120, 195, 120, 200, 110, 110]}, {"name": "sprint-20-40", "file": "vorgabe-sprint-20-40.csv", "seconds": 1440, "power": 142.77777777777777, "kj": 205.6, "max": 250, "above": 320, "description": "4 Blöcke aus je 4 Zyklen mit 20 Sekunden bei 250 W und 40 Sekunden bei 125 W, nach jedem Block 1 Minute bei 100 W, davor 2 Minuten bei 100 W, danach 2 Minuten bei 80 W", "t": [0.0, 2.0, 2.3333333333333335, 3.0, 3.3333333333333335, 4.0, 4.333333333333333, 5.0, 5.333333333333333, 6.0, 7.0, 7.333333333333333, 8.0, 8.333333333333334, 9.0, 9.333333333333334, 10.0, 10.333333333333334, 11.0, 12.0, 12.333333333333334, 13.0, 13.333333333333334, 14.0, 14.333333333333334, 15.0, 15.333333333333334, 16.0, 17.0, 17.333333333333332, 18.0, 18.333333333333332, 19.0, 19.333333333333332, 20.0, 20.333333333333332, 21.0, 22.0, 24.0], "watt": [100, 250, 125, 250, 125, 250, 125, 250, 125, 100, 250, 125, 250, 125, 250, 125, 250, 125, 100, 250, 125, 250, 125, 250, 125, 250, 125, 100, 250, 125, 250, 125, 250, 125, 250, 125, 100, 80, 80]}, {"name": "sprint-30-60", "file": "vorgabe-sprint-30-60.csv", "seconds": 1140, "power": 132.10526315789474, "kj": 150.6, "max": 250, "above": 300, "description": "10 Zyklen aus 30 Sekunden bei 250 W und 60 Sekunden bei 90 W, davor 2 Minuten bei 100 W, danach 2 Minuten bei 80 W", "t": [0.0, 2.0, 2.5, 3.5, 4.0, 5.0, 5.5, 6.5, 7.0, 8.0, 8.5, 9.5, 10.0, 11.0, 11.5, 12.5, 13.0, 14.0, 14.5, 15.5, 16.0, 17.0, 19.0], "watt": [100, 250, 90, 250, 90, 250, 90, 250, 90, 250, 90, 250, 90, 250, 90, 250, 90, 250, 90, 250, 90, 80, 80]}, {"name": "stufen-4x-230", "file": "vorgabe-stufen-4x-230.csv", "seconds": 1800, "power": 156.0, "kj": 280.8, "max": 230, "above": 360, "description": "wie `stufen-4x`, die oberste Stufe aber bei 230 statt 210 W", "t": [0.0, 3.0, 4.5, 6.0, 7.5, 9.0, 10.5, 12.0, 13.5, 15.0, 16.5, 18.0, 19.5, 21.0, 22.5, 24.0, 25.5, 27.0, 30.0], "watt": [100, 120, 150, 180, 230, 120, 150, 180, 230, 120, 150, 180, 230, 120, 150, 180, 230, 100, 100]}, {"name": "stufen-4x", "file": "vorgabe-stufen-4x.csv", "seconds": 1800, "power": 152.0, "kj": 273.6, "max": 210, "above": 360, "description": "4 Durchgänge mit stufenweisem Anstieg über 120, 150, 180 und 210 W (je 90 Sekunden), davor und danach 3 Minuten bei 100 W; aus einem Stufentest abgeleitet (51 bis 89 % von 236 W)", "t": [0.0, 3.0, 4.5, 6.0, 7.5, 9.0, 10.5, 12.0, 13.5, 15.0, 16.5, 18.0, 19.5, 21.0, 22.5, 24.0, 25.5, 27.0, 30.0], "watt": [100, 120, 150, 180, 210, 120, 150, 180, 210, 120, 150, 180, 210, 120, 150, 180, 210, 100, 100]}, {"name": "stufentest", "file": "vorgabe-stufentest.csv", "seconds": 2100, "power": 216.71428571428572, "kj": 455.1, "max": 350, "above": 1260, "description": "ab 100 W alle 3 Minuten 25 W mehr, bis 350 W, danach 2 Minuten bei 80 W", "t": [0.0, 3.0, 6.0, 9.0, 12.0, 15.0, 18.0, 21.0, 24.0, 27.0, 30.0, 33.0, 35.0], "watt": [100, 125, 150, 175, 200, 225, 250, 275, 300, 325, 350, 80, 80]}], FTP = 200;
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const n = (value, digits = 0) => value.toLocaleString("de-DE", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+const clock = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.round(seconds) % 60).padStart(2, "0")}`;
+const text = (value) => Object.assign(document.createElement("span"), { textContent: value }).innerHTML;
+
+document.getElementById("index").innerHTML = P.map((p) => `<li><a href="#${p.name}">${text(p.name)}</a> – ${clock(p.seconds)} min, Ø ${n(p.power)} W</li>`).join("");
+document.getElementById("profiles").innerHTML = P.map((p) => `<section class="card" id="${p.name}">
+  <h2>${text(p.name)}</h2>
+  <div class="facts"><span><b>${clock(p.seconds)}</b> min</span><span>Ø <b>${n(p.power)}</b> W (${n(p.power / FTP * 100)} % FTP)</span>
+    <span><b>${n(p.kj)}</b> kJ</span><span>bis <b>${n(p.max)}</b> W</span><span><b>${clock(p.above)}</b> min ab FTP</span></div>
+  <div class="note">${text(p.description).replace(/`([^`]*)`/g, "<code>$1</code>")}</div>
+  <div class="plot" id="plot-${p.name}"></div></section>`).join("");
+
+function draw() {
+  const ink = css("--ink-2"), s1 = css("--series-1"), s2 = css("--series-2"), muted = css("--muted");
+  const axis = { gridcolor: css("--grid"), linecolor: css("--axis"), zeroline: false, tickfont: { color: muted, size: 12 } };
+  const top = Math.max(...P.map((p) => p.max)) * 1.08;
+  for (const p of P) Plotly.react(`plot-${p.name}`, [
+    { x: p.t, y: p.watt, mode: "lines", line: { shape: "hv", color: s1, width: 2 }, fill: "tozeroy", fillcolor: s1 + "33", hovertemplate: "%{y} W ab %{x:.2f} min<extra></extra>" },
+  ], { margin: { l: 48, r: 76, t: 10, b: 38 }, paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)", showlegend: false, hovermode: "closest",
+       font: { family: getComputedStyle(document.body).fontFamily, color: ink },
+       xaxis: { ...axis, title: { text: "Zeit (min)", font: { color: ink, size: 13 } }, range: [0, p.seconds / 60], showgrid: false },
+       yaxis: { ...axis, title: { text: "Watt", font: { color: ink, size: 13 } }, range: [0, top] },
+       shapes: [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: FTP, y1: FTP, line: { color: s2, width: 2, dash: "dash" } }],
+       annotations: [{ xref: "paper", x: 1, xanchor: "left", y: FTP, text: ` FTP ${FTP} W`, showarrow: false, font: { color: ink, size: 12 } }] },
+     { displayModeBar: false, responsive: true });
+}
+draw();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+</script>
+</body>
+</html>

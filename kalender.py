@@ -154,7 +154,7 @@ PAGE = """<!doctype html>
 </head>
 <body>
 <main>
-<nav class="back"><a href="../../training/training.html">← Trainingsübersicht</a></nav>
+<nav class="back"><a href="../../training/training.html">← Trainingsübersicht</a> · <a href="vorgaben.html">Vorgaben</a></nav>
 <h1>Trainingskalender</h1>
 <p class="sub" id="sub"></p>
 <section class="tiles" id="tiles"></section>

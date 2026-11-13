@@ -168,6 +168,8 @@ Mitgeliefert sind elf Profile:
 - `vorgabe-hit.csv` (25 Minuten): 21 Zyklen aus 15 Sekunden bei 200 W und 45 Sekunden bei 100 W, davor und danach 2 Minuten bei 80 W
 - `vorgabe-hiit-20.csv` (20 Minuten): 12 Runden aus 30 Sekunden bei 230 W und 30 Sekunden bei 80 W, davor 4 Minuten bei 100 W, danach 4 Minuten bei 80 W
 - `vorgabe-intervall-1-3.csv` (24 Minuten): 5 Zyklen aus 1 Minute bei 200 W und 3 Minuten bei 100 W, davor und danach 2 Minuten bei 80 W
+- `vorgabe-intervall-30-30.csv` (34 Minuten): 2 Serien aus je 10 Zyklen mit 30 Sekunden bei 230 W und 30 Sekunden bei 100 W, dazwischen 4 Minuten bei 100 W, davor 3 Minuten bei 100 W und 2 Minuten bei 140 W, danach 5 Minuten bei 80 W; kürzere Pausen als `sprint-30-60`, damit die Sauerstoffaufnahme zwischen den Intervallen hoch bleibt
+- `vorgabe-intervall-4x3.csv` (34 Minuten): 4 Intervalle von 3 Minuten bei 220 W (110 % einer FTP von 200 W) mit 3 Minuten bei 110 W dazwischen, davor je 4 Minuten bei 100 und 140 W, danach 5 Minuten bei 90 W
 - `vorgabe-sprint-30-60.csv` (19 Minuten): 10 Zyklen aus 30 Sekunden bei 250 W und 60 Sekunden bei 90 W, davor 2 Minuten bei 100 W, danach 2 Minuten bei 80 W
 - `vorgabe-sprint-20-40.csv` (24 Minuten): 4 Blöcke aus je 4 Zyklen mit 20 Sekunden bei 250 W und 40 Sekunden bei 125 W, nach jedem Block 1 Minute bei 100 W, davor 2 Minuten bei 100 W, danach 2 Minuten bei 80 W
 - `vorgabe-roennestad-30-15.csv` (32:30 Minuten): Mikrointervalle nach Rønnestad, 2 Serien aus je 13 Zyklen mit 30 Sekunden bei 240 W und 15 Sekunden bei 120 W (120 % und 60 % einer FTP von 200 W), dazwischen 3 Minuten bei 100 W, davor 4 Minuten bei 100 W und 2 Minuten bei 150 W, danach 4:30 Minuten bei 80 W
@@ -223,6 +225,14 @@ uv run rouvy.py logs/vegas.fit --route Vegas --betablocker
 ```
 
 `rouvy.py` liest die `.fit`-Datei einer Rouvy-Fahrt (Rouvy verbindet sich selbst mit dem Ergometer, ohne dieses Programm) und schreibt mit derselben Auswertung und Seite wie `kinomap.py` `logs/rouvy-<jj-mm-tt-hh-mm-ss>.html`. Die Datei nennt die Strecke nicht; `--route` setzt sie (sonst der Dateiname). Mit `--training` trägt das Programm die Fahrt wie `lauf.py` ins Trainingslog ein, mit „Rouvy <Strecke>“ in der Spalte Strecke; `--rr`, `--temperature`, `--note`, `--ftp` und `--assessment` wirken wie bei `kinomap.py`. `--drop-pauses` schneidet Pausen ab 10 s ohne Treten heraus (samt der Strecke, die Rouvy dabei weiterrollt); eine schon eingetragene Fahrt (gleiches Datum, Strecke und Kalorien) wird dann in ihrer Zeile korrigiert statt doppelt eingetragen. Es braucht `fitparse`, deshalb `uv run`.
+
+## Vorgaben ansehen
+
+```
+python3 vorgaben.py   # schreibt logs/vorgaben.html
+```
+
+`vorgaben.py` zeichnet alle `profiles/vorgabe-*.csv` auf einer Seite als Stufendiagramm mit der FTP (200 W) als Linie, dazu Dauer, mittlere Leistung, Arbeit, Höchstwert und Zeit ab FTP; die Beschreibung jedes Profils ist seine Zeile in der Liste oben. Der Trainingskalender verlinkt oben auf die Seite. Nach einer neuen oder geänderten Vorgabe das Programm noch einmal aufrufen.
 
 ## Trainingskalender
 
