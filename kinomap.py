@@ -151,7 +151,7 @@ PAGE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kinomap-Fahrt __DATE__</title>
+<title>__APP__-Fahrt __DATE__</title>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
   :root { color-scheme: light dark; --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
@@ -191,7 +191,7 @@ PAGE = """<!doctype html>
 <body>
 <main>
 <nav class="back"><a href="index.html">← Trainingskalender</a> · <a href="../../training/training.html">Trainingsübersicht</a></nav>
-<h1>Kinomap-Fahrt vom __DATE__</h1>
+<h1>__APP__-Fahrt vom __DATE__</h1>
 <p class="sub" id="sub"></p>
 <section class="tiles" id="tiles"></section>
 <section class="card" id="assessment-card"><h2>Bewertung</h2><div id="assessment"></div></section>
@@ -205,7 +205,7 @@ PAGE = """<!doctype html>
   <div class="card"><h2>Trittfrequenz im Verlauf</h2><div class="note">Medianfilter über __MEDIAN__ Messwerte</div><div class="plot low" id="cadence"></div></div>
 </section>
 <section class="pair">
-  <div class="card"><h2>Geschwindigkeit im Verlauf</h2><div class="note">Von Kinomap aus Leistung und Gefälle der Strecke berechnet</div><div class="plot low" id="speed"></div></div>
+  <div class="card"><h2>Geschwindigkeit im Verlauf</h2><div class="note">Von __APP__ aus Leistung und Gefälle der Strecke berechnet</div><div class="plot low" id="speed"></div></div>
   <div class="card"><h2>Höhe im Verlauf</h2><div class="note">Höhenprofil der Strecke aus dem Export</div><div class="plot low" id="altitude"></div></div>
 </section>
 <section class="card"><h2>Mittlere Leistung je __BLOCK__ Minuten</h2><div class="note">Jeder Balken ein Block der Fahrt, der letzte kann kürzer sein</div><div class="plot" id="bars"></div></section>
@@ -217,7 +217,7 @@ PAGE = """<!doctype html>
   <div class="card"><h2>Blöcke</h2><div class="scroll"><table id="blocks"></table></div></div>
   <div class="card"><h2>Bestwerte</h2><div class="scroll"><table id="best"></table></div></div>
 </section>
-<p class="note">Quelle: Kinomap-Export __ZIP__. Arbeit: Leistung über die Zeit summiert; Kalorien wie von Kinomap gemeldet.</p>
+<p class="note">Quelle: __APP__-Export __ZIP__. Arbeit: Leistung über die Zeit summiert; Kalorien wie von __APP__ gemeldet.</p>
 </main>
 <script>
 const D = __DATA__;
@@ -233,7 +233,7 @@ document.getElementById("tiles").innerHTML = [
   ["Gefahrene Zeit", clock(D.seconds), "min", `${n(D.distance, 2)} km`],
   ["Durchschnittsleistung", n(D.power), "W", `${share(D.power)} · höchster Wert ${n(D.power_max)} W`],
   ["Normalized Power", n(D.normalized), "W", `Verhältnis zum Mittel ${n(D.normalized / D.power, 2)}`],
-  ["Arbeit", n(D.kj), "kJ", `${n(D.kcal)} kcal laut Kinomap`],
+  ["Arbeit", n(D.kj), "kJ", `${n(D.kcal)} kcal laut __APP__`],
   ["Höchster Puls", n(D.pulse_max), "bpm", `im Mittel ${n(D.pulse)}` + (D.betablocker ? " · unter Betablocker" : "")],
   ["Trittfrequenz", n(D.cadence), "rpm", ""],
   ["Geschwindigkeit", n(D.speed, 1), "km/h", `bis ${n(D.speed_max, 1)} km/h`],
@@ -340,6 +340,16 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
 """
 
 
+def write_page(result: dict, start: datetime, ftp: float, source: str, app: str) -> Path:
+    """Write the page to logs/<app>-<yy-mm-dd-hh-mm-ss>.html (lower case), named after the local start; also used by rouvy.py."""
+    out = Path(__file__).with_name("logs") / f"{app.lower()}-{start:%y-%m-%d-%H-%M-%S}.html"
+    out.write_text(PAGE.replace("__APP__", app).replace("__DATE__", f"{start:%d.%m.%Y, %H:%M} Uhr").replace("__MEDIAN__", str(MEDIAN_SAMPLES))
+                   .replace("__BLOCK__", f"{BLOCK_SECONDS / 60:g}").replace("__FTP__", f"{ftp:g}")
+                   .replace("__STEPS__", json.dumps(STEPS)).replace("__ZIP__", html.escape(source))
+                   .replace("__DATA__", json.dumps(result, ensure_ascii=False).replace("</", "<\\/")), encoding="utf-8")
+    return out
+
+
 def main():
     parser = argparse.ArgumentParser(description="Report on a ride exported from Kinomap.")
     parser.add_argument("zip", type=Path, help="the activity export from Kinomap")
@@ -363,11 +373,7 @@ def main():
         print(f"training log: Nr {result['entry']['Nr'] if result['entry'] else '?'} added")
     result["assessment"] = args.assessment
     start = facts["start"] or datetime.fromtimestamp(args.zip.stat().st_mtime)
-    out = Path(__file__).with_name("logs") / f"kinomap-{start:%y-%m-%d-%H-%M-%S}.html"
-    out.write_text(PAGE.replace("__DATE__", f"{start:%d.%m.%Y, %H:%M} Uhr").replace("__MEDIAN__", str(MEDIAN_SAMPLES))
-                  .replace("__BLOCK__", f"{BLOCK_SECONDS / 60:g}").replace("__FTP__", f"{args.ftp:g}")
-                   .replace("__STEPS__", json.dumps(STEPS)).replace("__ZIP__", html.escape(args.zip.name))
-                   .replace("__DATA__", json.dumps(result, ensure_ascii=False).replace("</", "<\\/")), encoding="utf-8")
+    out = write_page(result, start, args.ftp, args.zip.name, "Kinomap")
 
     print(f"{result['route']}  {result['seconds']:.0f} s  {result['power']:.0f} W (NP {result['normalized']:.0f})  {result['kj']:.0f} kJ  {result['kcal']:.0f} kcal  "
           f"max {result['power_max']:.0f} W  {result['cadence']:.0f} rpm  {result['distance']:.2f} km  {result['climb']:.0f} m  pulse max {result['pulse_max'] or 0:.0f}")

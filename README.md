@@ -216,6 +216,14 @@ python3 kinomap.py ~/training/cern.zip --betablocker
 
 `kinomap.py` liest den Export einer Kinomap-Aktivität (das Zip mit `.csv`, `.tcx`, `.gpx` und `.pwx`) und schreibt `logs/kinomap-<jj-mm-tt-hh-mm-ss>.html`: Kennzahlen samt Normalized Power, Beobachtungen, Leistung gegen die FTP, Puls, Trittfrequenz, Geschwindigkeit und Höhe im Verlauf, die mittlere Leistung je fünf Minuten, die beste mittlere Leistung je Dauer und die Zeit in den Intensitätsstufen des Kalenders. Eine solche Fahrt hat keine Vorgabe, deshalb fehlt der Vergleich von Ist und Soll. Mit `--training` trägt das Programm die Fahrt ins Trainingslog ein (über `add_training.py` des Repos `training`, wie eine eingefügte Kinomap-Zusammenfassung; `--rr`, `--temperature` und `--note` ergänzen Blutdruck, Raumtemperatur und Kommentar), sonst zeigt es nur die Zeile, die dort schon steht. `--ftp` ändert die Bezugsleistung (200 W). `--assessment "…"` fügt wie bei `lauf.py` eine Karte „Bewertung“ hinzu.
 
+## Rouvy-Fahrt ansehen
+
+```
+uv run rouvy.py logs/vegas.fit --route Vegas --betablocker
+```
+
+`rouvy.py` liest die `.fit`-Datei einer Rouvy-Fahrt (Rouvy verbindet sich selbst mit dem Ergometer, ohne dieses Programm) und schreibt mit derselben Auswertung und Seite wie `kinomap.py` `logs/rouvy-<jj-mm-tt-hh-mm-ss>.html`. Die Datei nennt die Strecke nicht; `--route` setzt sie (sonst der Dateiname). Mit `--training` trägt das Programm die Fahrt wie `lauf.py` ins Trainingslog ein, mit „Rouvy <Strecke>“ in der Spalte Strecke; `--rr`, `--temperature`, `--note`, `--ftp` und `--assessment` wirken wie bei `kinomap.py`. Es braucht `fitparse`, deshalb `uv run`.
+
 ## Trainingskalender
 
 ```
@@ -223,7 +231,7 @@ python3 kalender.py            # schreibt logs/index.html
 python3 kalender.py --ftp 210  # andere Bezugsleistung
 ```
 
-`kalender.py` liest `~/training/training_log.csv` und zeigt alle Einheiten als Monatskalender. Die Farbe eines Tages steht für seine mittlere Leistung als Anteil der FTP (200 W, fünf Stufen von „unter 70 %" bis „ab 100 %", von Grün über Gelb, Orange und Rot bis Violett: Grün für leichte, Violett für harte Tage); die Knöpfe darüber färben stattdessen nach Kalorien oder Dauer. Eine kleine Zahl in der Ecke nennt die Zahl der Einheiten, wenn es an einem Tag mehrere waren. Ein Klick auf einen Tag zeigt seine Einheiten als Tabelle. Bei Einheiten, die mit diesem Programm aufgezeichnet wurden, führt die Spalte „Auswertung" zur Seite von `lauf.py` und, bei einem Stufentest, von `stufentest.py`, bei einer Kinomap-Fahrt zur Seite von `kinomap.py`; zugeordnet wird über Datum, Kalorien und Dauer. Die Seite ist eine Momentaufnahme: Nach einem neu abgelegten Lauf das Programm noch einmal aufrufen. Oben verweist ein Link auf die Trainingsübersicht `training.html` im Repo `training` (relativ, `../../training/training.html`: gilt lokal, wenn beide Repos nebeneinander liegen, und auf GitHub Pages); die Seiten von `lauf.py`, `stufentest.py` und `kinomap.py` verlinken oben auf den Kalender und die Trainingsübersicht. Zusätzlich schreibt das Programm `logs/pages.json` (Auswertungsseiten je Einheitennummer); daraus setzt `training.html` in der Tabelle neben jede ausgewertete Einheit Links auf ihre Seiten.
+`kalender.py` liest `~/training/training_log.csv` und zeigt alle Einheiten als Monatskalender. Die Farbe eines Tages steht für seine mittlere Leistung als Anteil der FTP (200 W, fünf Stufen von „unter 70 %" bis „ab 100 %", von Grün über Gelb, Orange und Rot bis Violett: Grün für leichte, Violett für harte Tage); die Knöpfe darüber färben stattdessen nach Kalorien oder Dauer. Eine kleine Zahl in der Ecke nennt die Zahl der Einheiten, wenn es an einem Tag mehrere waren. Ein Klick auf einen Tag zeigt seine Einheiten als Tabelle. Bei Einheiten, die mit diesem Programm aufgezeichnet wurden, führt die Spalte „Auswertung" zur Seite von `lauf.py` und, bei einem Stufentest, von `stufentest.py`, bei einer Kinomap- oder Rouvy-Fahrt zur Seite von `kinomap.py` bzw. `rouvy.py`; zugeordnet wird über Datum, Kalorien und Dauer. Die Seite ist eine Momentaufnahme: Nach einem neu abgelegten Lauf das Programm noch einmal aufrufen. Oben verweist ein Link auf die Trainingsübersicht `training.html` im Repo `training` (relativ, `../../training/training.html`: gilt lokal, wenn beide Repos nebeneinander liegen, und auf GitHub Pages); die Seiten von `lauf.py`, `stufentest.py`, `kinomap.py` und `rouvy.py` verlinken oben auf den Kalender und die Trainingsübersicht. Zusätzlich schreibt das Programm `logs/pages.json` (Auswertungsseiten je Einheitennummer); daraus setzt `training.html` in der Tabelle neben jede ausgewertete Einheit Links auf ihre Seiten.
 
 ## Zielleistung und Regelung
 
