@@ -17,6 +17,8 @@ measured columns), with the route in Strecke and the Kinomap column left empty.
 """
 
 import argparse
+import csv
+import io
 from datetime import timezone
 import sys
 from pathlib import Path
@@ -44,6 +46,55 @@ def read_fit(path: Path, route: str) -> tuple[list[dict], dict]:
     return rows, {"start": local, "kcal": float(session["total_calories"]) if session.get("total_calories") else None, "route": route}
 
 
+PAUSE_SECONDS = 10  # a stretch without pedalling at least this long, inside the ride, is a pause that --drop-pauses cuts out
+
+
+def drop_pauses(rows: list[dict]) -> tuple[list[dict], list[tuple[float, float]]]:
+    """The rows without the pauses inside the ride, with time and distance after each pause moved up so the ride runs on
+    without a gap; and the pauses as (start in the cut ride, length) in seconds. Rouvy lets the rider coast through a
+    pause, so the distance covered then is dropped too."""
+    still = [row["cadence"] == 0 and row["power"] == 0 for row in rows]
+    first = next(i for i, s in enumerate(still) if not s)
+    last = len(rows) - 1 - next(i for i, s in enumerate(reversed(still)) if not s)
+    kept, pauses, shift, gone, index = [], [], 0.0, 0.0, 0
+    while index < len(rows):
+        end = index
+        while end < len(rows) and still[end]:
+            end += 1
+        if first < index and end <= last and end > index and rows[end]["seconds"] - rows[index]["seconds"] >= PAUSE_SECONDS:
+            pauses.append((rows[index]["seconds"] - shift, rows[end]["seconds"] - rows[index]["seconds"]))
+            shift += rows[end]["seconds"] - rows[index]["seconds"]
+            gone += rows[end]["distance"] - rows[index]["distance"]
+            index = end
+            continue
+        kept.append(rows[index] | {"seconds": rows[index]["seconds"] - shift, "distance": rows[index]["distance"] - gone})
+        index += 1
+    return kept, pauses
+
+
+def refile(row: dict, rr: str | None, note: str | None) -> dict | None:
+    """Update the row this ride already has in the training log (same date, route and calories, e.g. before its pauses were
+    cut out) with the new figures; returns it, or None if there is none. Nr, blood pressure and comment stay unless given."""
+    log = kinomap.TRAINING / "training_log.csv"
+    raw = log.read_bytes()
+    ending = b"\r\n" if raw.count(b"\r\n") * 2 > raw.count(b"\n") else b"\n"
+    lines = raw.splitlines()
+    header = next(csv.reader([lines[0].decode("utf-8-sig")]))
+    for index, line in enumerate(lines[1:], 1):
+        logged = dict(zip(header, next(csv.reader([line.decode()]), [])))
+        if all(logged.get(key) == row[key] for key in ("Datum", "Strecke", "Kcal")):
+            logged.update({key: value for key, value in row.items() if value or key not in ("Temperatur_C",)})
+            logged["RR_training"] = rr or logged.get("RR_training", "")
+            logged["Kommentar"] = note if note is not None else logged.get("Kommentar", "")
+            out = io.StringIO()
+            csv.writer(out, lineterminator="").writerow([logged.get(name, "") for name in header])
+            lines[index] = out.getvalue().encode()
+            log.write_bytes(ending.join(lines + [b""]))
+            lauf.regenerate_training_pdf()
+            return logged
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="Report on a ride exported from Rouvy (.fit).")
     parser.add_argument("fit", type=Path, help="the activity file from Rouvy")
@@ -55,10 +106,15 @@ def main():
     parser.add_argument("--rr", help="blood pressure after the ride, SYS/DIA/PULSE, for the training log")
     parser.add_argument("--temperature", type=float, help="room temperature in °C, for the training log")
     parser.add_argument("--note", help="comment for the training log (default: Rouvy <route>)")
+    parser.add_argument("--drop-pauses", action="store_true", help=f"cut out stretches of at least {PAUSE_SECONDS} s without pedalling inside the ride")
     args = parser.parse_args()
 
     route = args.route or args.fit.stem.replace("_", " ").title()
     rows, facts = read_fit(args.fit, route)
+    if args.drop_pauses:
+        rows, pauses = drop_pauses(rows)
+        for at, seconds in pauses:
+            print(f"pause cut out: {seconds:.0f} s at {at // 60:.0f}:{at % 60:02.0f}")
     result = kinomap.analyse(rows, facts, args.ftp, args.betablocker)
     start = facts["start"]
     if args.training:
@@ -67,8 +123,11 @@ def main():
                "Strecke": f"Rouvy {route}", "Distanz_km": f"{result['distance']:.2f}", "Kadenz_rpm": f"{result['cadence']:.0f}",
                "Watt_Max": f"{result['power_max']:.0f}", "Hoehenmeter": f"{result['climb']:.0f}", "Max_kmh": f"{result['speed_max']:.1f}",
                "Temperatur_C": f"{args.temperature:.0f}" if args.temperature is not None else ""}
-        logged, new = lauf.file_in_training(row, args.rr, args.note or f"Rouvy {route}")
-        print(f"training log: Nr {logged['Nr']} {'added' if new else 'already there'}")
+        if (logged := refile(row, args.rr, args.note)):
+            print(f"training log: Nr {logged['Nr']} updated")
+        else:
+            logged, new = lauf.file_in_training(row, args.rr, args.note or f"Rouvy {route}")
+            print(f"training log: Nr {logged['Nr']} {'added' if new else 'already there'}")
         result = kinomap.analyse(rows, facts, args.ftp, args.betablocker)
     result["assessment"] = args.assessment
     out = kinomap.write_page(result, start, args.ftp, args.fit.name, "Rouvy")

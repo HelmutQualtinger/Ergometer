@@ -40,6 +40,10 @@ rider's FTP stays 200 W (see memory).
 - `--temperature X`: only if the ride ended within the last half hour (read the sensor as in the
   kinomap skill, minus 2 degrees); otherwise leave it out.
 - `--assessment "..."`: German paragraphs for the "Bewertung" card, repeatable.
+- `--drop-pauses`: when the user wants a pause cut out. Stretches of at least 10 s with power and
+  cadence at 0 inside the ride are removed, the time and distance after them move up. With
+  `--training` a ride already filed (same date, `Rouvy <route>`, calories) is corrected in its row
+  (Nr, blood pressure and comment stay unless given), not added again. Rerun `kalender.py` after.
 
 ## Detailed analysis
 

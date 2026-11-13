@@ -222,7 +222,7 @@ python3 kinomap.py ~/training/cern.zip --betablocker
 uv run rouvy.py logs/vegas.fit --route Vegas --betablocker
 ```
 
-`rouvy.py` liest die `.fit`-Datei einer Rouvy-Fahrt (Rouvy verbindet sich selbst mit dem Ergometer, ohne dieses Programm) und schreibt mit derselben Auswertung und Seite wie `kinomap.py` `logs/rouvy-<jj-mm-tt-hh-mm-ss>.html`. Die Datei nennt die Strecke nicht; `--route` setzt sie (sonst der Dateiname). Mit `--training` trägt das Programm die Fahrt wie `lauf.py` ins Trainingslog ein, mit „Rouvy <Strecke>“ in der Spalte Strecke; `--rr`, `--temperature`, `--note`, `--ftp` und `--assessment` wirken wie bei `kinomap.py`. Es braucht `fitparse`, deshalb `uv run`.
+`rouvy.py` liest die `.fit`-Datei einer Rouvy-Fahrt (Rouvy verbindet sich selbst mit dem Ergometer, ohne dieses Programm) und schreibt mit derselben Auswertung und Seite wie `kinomap.py` `logs/rouvy-<jj-mm-tt-hh-mm-ss>.html`. Die Datei nennt die Strecke nicht; `--route` setzt sie (sonst der Dateiname). Mit `--training` trägt das Programm die Fahrt wie `lauf.py` ins Trainingslog ein, mit „Rouvy <Strecke>“ in der Spalte Strecke; `--rr`, `--temperature`, `--note`, `--ftp` und `--assessment` wirken wie bei `kinomap.py`. `--drop-pauses` schneidet Pausen ab 10 s ohne Treten heraus (samt der Strecke, die Rouvy dabei weiterrollt); eine schon eingetragene Fahrt (gleiches Datum, Strecke und Kalorien) wird dann in ihrer Zeile korrigiert statt doppelt eingetragen. Es braucht `fitparse`, deshalb `uv run`.
 
 ## Trainingskalender
 
