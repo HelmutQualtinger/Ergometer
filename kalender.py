@@ -20,8 +20,8 @@ from pathlib import Path
 
 FTP = 200  # watts; the power steps are shares of it
 TRAINING = Path.home() / "training"  # the training log project, as in lauf.py
-PAGES = {"lauf": "Lauf", "kinomap": "Kinomap", "stufentest": "Stufentest"}  # generated pages in logs/ that a session links to
-RIDES = ("lauf", "kinomap")  # those of them that embed the ride's figures (lauf.py, kinomap.py)
+PAGES = {"lauf": "Lauf", "kinomap": "Kinomap", "rouvy": "Rouvy", "stufentest": "Stufentest"}  # generated pages in logs/ that a session links to
+RIDES = ("lauf", "kinomap", "rouvy")  # those of them that embed the ride's figures (lauf.py, kinomap.py, rouvy pages)
 MATCH_SECONDS = 60  # a page and a session of the same day and calories are the same ride if their durations differ by no more
 
 
