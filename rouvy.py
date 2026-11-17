@@ -105,6 +105,7 @@ def main():
     parser.add_argument("--training", action="store_true", help="file the ride in ~/training/training_log.csv (not twice)")
     parser.add_argument("--rr", help="blood pressure after the ride, SYS/DIA/PULSE, for the training log")
     parser.add_argument("--temperature", type=float, help="room temperature in °C, for the training log")
+    parser.add_argument("--max-hf", type=float, help="highest pulse from the rider's own watch, for the training log when the file has none")
     parser.add_argument("--note", help="comment for the training log (default: Rouvy <route>)")
     parser.add_argument("--drop-pauses", action="store_true", help=f"cut out stretches of at least {PAUSE_SECONDS} s without pedalling inside the ride")
     args = parser.parse_args()
@@ -119,7 +120,7 @@ def main():
     start = facts["start"]
     if args.training:
         row = {"Datum": f"{start.day}.{start.month}", "Dauer_sek": f"{result['seconds']:.0f}", "Kcal": f"{result['kcal']:.0f}",
-               "Watt": f"{result['power']:.0f}", "MaxHF": f"{result['pulse_max']:.0f}" if result["pulse_max"] else "",
+               "Watt": f"{result['power']:.0f}", "MaxHF": f"{result['pulse_max'] or args.max_hf or 0:.0f}" if result["pulse_max"] or args.max_hf else "",
                "Strecke": f"Rouvy {route}", "Distanz_km": f"{result['distance']:.2f}", "Kadenz_rpm": f"{result['cadence']:.0f}",
                "Watt_Max": f"{result['power_max']:.0f}", "Hoehenmeter": f"{result['climb']:.0f}", "Max_kmh": f"{result['speed_max']:.1f}",
                "Temperatur_C": f"{args.temperature:.0f}" if args.temperature is not None else ""}
