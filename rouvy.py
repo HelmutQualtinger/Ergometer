@@ -121,7 +121,7 @@ def main():
     if args.training:
         row = {"Datum": f"{start.day}.{start.month}", "Dauer_sek": f"{result['seconds']:.0f}", "Kcal": f"{result['kcal']:.0f}",
                "Watt": f"{result['power']:.0f}", "MaxHF": f"{result['pulse_max'] or args.max_hf or 0:.0f}" if result["pulse_max"] or args.max_hf else "",
-               "Strecke": f"Rouvy {route}", "Distanz_km": f"{result['distance']:.2f}", "Kadenz_rpm": f"{result['cadence']:.0f}",
+               "Strecke": f"Rouvy {route}", "Distanz_km": f"{result['distance']:.2f}", "Kadenz_rpm": f"{result['cadence']:.0f}" if result["cadence"] else "",
                "Watt_Max": f"{result['power_max']:.0f}", "Hoehenmeter": f"{result['climb']:.0f}", "Max_kmh": f"{result['speed_max']:.1f}",
                "Temperatur_C": f"{args.temperature:.0f}" if args.temperature is not None else ""}
         if (logged := refile(row, args.rr, args.note)):
@@ -134,7 +134,7 @@ def main():
     out = kinomap.write_page(result, start, args.ftp, args.fit.name, "Rouvy")
 
     print(f"{route}  {result['seconds']:.0f} s  {result['power']:.0f} W (NP {result['normalized']:.0f})  {result['kj']:.0f} kJ  {result['kcal']:.0f} kcal  "
-          f"max {result['power_max']:.0f} W  {result['cadence']:.0f} rpm  {result['distance']:.2f} km  {result['climb']:.0f} m  pulse max {result['pulse_max'] or 0:.0f}")
+          f"max {result['power_max']:.0f} W  {result['cadence'] or 0:.0f} rpm  {result['distance']:.2f} km  {result['climb']:.0f} m  pulse max {result['pulse_max'] or 0:.0f}")
     print("best " + ", ".join(f"{item['seconds']} s {item['power']:.0f} W" for item in result["best"]))
     print(f"training log: Nr {result['entry']['Nr']}" if result["entry"] else "training log: no row for this ride")
     print(out)

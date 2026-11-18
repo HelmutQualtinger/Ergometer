@@ -120,7 +120,7 @@ def analyse(rows: list[dict], facts: dict, ftp: float, betablocker: bool) -> dic
         block = rows[first:first + BLOCK_SECONDS + 1]
         beats = [row["pulse"] for row in block if row["pulse"] > 0]
         blocks.append({"start": block[0]["seconds"], "seconds": block[-1]["seconds"] - block[0]["seconds"], "power": mean(row["power"] for row in block[:-1] or block),
-                       "pulse": mean(beats) if beats else None, "cadence": mean(row["cadence"] for row in block), "speed": mean(row["speed"] for row in block),
+                       "pulse": mean(beats) if beats else None, "cadence": mean(row["cadence"] for row in block) or None, "speed": mean(row["speed"] for row in block),
                        "climb": climb(block)})
     edges = [share * ftp for share in STEPS]
     zones = [0.0] * (len(edges) + 1)
@@ -133,7 +133,7 @@ def analyse(rows: list[dict], facts: dict, ftp: float, betablocker: bool) -> dic
         "route": facts["route"], "start": start.strftime("%H:%M") if start else None, "ftp": ftp, "betablocker": betablocker,
         "seconds": seconds, "kj": work, "kcal": kcal, "kcal_work": work / 4.185 / EFFICIENCY, "power": work * 1000 / seconds, "power_max": power[peak], "peak_at": rows[peak]["seconds"],
         "power_min": min(power), "normalized": mean(value ** 4 for value in rolling) ** 0.25, "halves": [mean(power[:half]), mean(power[half:])],
-        "above": sum(zones[-1:]), "cadence": mean(row["cadence"] for row in rows if row["cadence"] >= 40), "pulse": mean(pulse) if pulse else None,
+        "above": sum(zones[-1:]), "cadence": mean(pedalling) if (pedalling := [row["cadence"] for row in rows if row["cadence"] >= 40]) else None, "pulse": mean(pulse) if pulse else None,
         "pulse_max": max(pulse) if pulse else None, "distance": rows[-1]["distance"] / 1000, "speed": mean(row["speed"] for row in rows),
         "speed_max": max(row["speed"] for row in rows), "climb": climb(rows), "altitude": [min(row["altitude"] for row in rows), max(row["altitude"] for row in rows)],
         "best": [dict(zip(("power", "start"), best_mean(power, span)), seconds=span) for span in BEST if span <= len(power)],
@@ -376,7 +376,7 @@ def main():
     out = write_page(result, start, args.ftp, args.zip.name, "Kinomap")
 
     print(f"{result['route']}  {result['seconds']:.0f} s  {result['power']:.0f} W (NP {result['normalized']:.0f})  {result['kj']:.0f} kJ  {result['kcal']:.0f} kcal  "
-          f"max {result['power_max']:.0f} W  {result['cadence']:.0f} rpm  {result['distance']:.2f} km  {result['climb']:.0f} m  pulse max {result['pulse_max'] or 0:.0f}")
+          f"max {result['power_max']:.0f} W  {result['cadence'] or 0:.0f} rpm  {result['distance']:.2f} km  {result['climb']:.0f} m  pulse max {result['pulse_max'] or 0:.0f}")
     print("best " + ", ".join(f"{item['seconds']} s {item['power']:.0f} W" for item in result["best"]))
     print(f"training log: Nr {result['entry']['Nr']}" if result["entry"] else "training log: no row for this ride")
     print(out)
