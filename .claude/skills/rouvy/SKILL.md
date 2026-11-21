@@ -27,6 +27,17 @@ A zip with only a `.jpg` in it is Rouvy's share picture (FTP estimate, "all-time
 data: ask for the `.fit` export. Rouvy's own FTP estimate after a short ride is not a test; the
 rider's FTP stays 200 W (see memory).
 
+## MyWhoosh and split rides
+
+MyWhoosh exports the same kind of `.fit` (manufacturer 331, the route only as a `Title` code); treat it
+like a Rouvy file with `--app MyWhoosh` (Strecke `MyWhoosh <route>`, page `logs/mywhoosh-<start>.html`,
+which the calendar links). The user may name the file after the wrong route; trust the session's
+`CurrentRouteId`/`Title` and ask if unsure. When the app was restarted on the same route (two files
+a minute or so apart, same route id), pass both in order: they become one ride without the gap.
+MyWhoosh often records no pulse: pass `--max-hf` if the user read one off the watch, or
+`--assumed-pulse FIRST/LAST` only when the user asks for an assumed curve, and then say in the
+note and the assessment that it is an assumption, not a measurement.
+
 ## What to pass
 
 - `--route NAME`: the route's name, which the file does not contain ("vegas" → `--route Vegas`).
