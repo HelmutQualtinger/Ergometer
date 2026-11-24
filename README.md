@@ -238,6 +238,14 @@ python3 vorgaben.py   # schreibt logs/vorgaben.html
 
 `vorgaben.py` zeichnet alle `profiles/vorgabe-*.csv` auf einer Seite als Stufendiagramm mit der FTP (200 W) als Linie, dazu Dauer, mittlere Leistung, Arbeit, Höchstwert und Zeit ab FTP; die Beschreibung jedes Profils ist seine Zeile in der Liste oben. Der Trainingskalender verlinkt oben auf die Seite. Nach einer neuen oder geänderten Vorgabe das Programm noch einmal aufrufen.
 
+## Puls gegen Leistung
+
+```
+uv run puls_leistung.py   # schreibt logs/puls-leistung.html
+```
+
+`puls_leistung.py` sammelt alle Fahrten mit Leistung und Puls (Logs dieses Programms, Kinomap-Exporte in `logs/` und `~/training/`, Rouvy-Dateien in `logs/`), mittelt sie auf 10-Sekunden-Werte und zeigt sie als Dichte mit Höhenlinien (mittlerer Puls gegen Leistung, seit Oktober). Darüber stehen alle Einheiten des Trainingslogs seit Mai mit Ø Leistung und höchstem Puls, als Dichte und als Punktwolke, deren Farbe die Tage seit der ersten Einheit angibt. Die erste Minute jeder Fahrt und Abschnitte ohne Treten oder Puls fallen weg; eine doppelt vorhandene Fahrt zählt einmal.
+
 ## Trainingskalender
 
 ```
