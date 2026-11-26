@@ -85,12 +85,31 @@ Bluetooth läuft über CoreBluetooth und steckt in `ble_macos.m` (Objective-C, w
 | `--power W` | Zielleistung in Watt schon beim Start vorgeben |
 | `--profile DATEI` | Leistungsvorgabe aus einer Datei laden; sie startet, sobald das Ergometer verbunden ist |
 | `--scan` | nur die Bluetooth-Geräte in der Nähe auflisten |
+| `--site VERZEICHNIS` | zusätzlich eine Web-App aus diesem Verzeichnis unter `/site/` ausliefern, z. B. die Radfahrt durch Rom (siehe unten) |
 | `--name TEXT` | Gerät mit diesem Namensbestandteil suchen |
 | `--address ID` | mit einem bestimmten Gerät verbinden (auf macOS eine UUID) |
 | `--timeout S` | Suchdauer in Sekunden (Standard: 10) |
 | `--raw` | zusätzlich die Rohdaten aller übrigen Benachrichtigungen ausgeben |
 
 Ohne `--panel` gibt es nur die Konsolenausgabe.
+
+## Radfahrt durch Rom (Live-Ergometer)
+
+Das 3D-Modell von Rom ([HelmutQualtinger/roma](https://github.com/HelmutQualtinger/roma)) hat einen Modus „Live-Ergometer“: Die Fahrt durch Rom folgt der Leistung, die am Ergometer getreten wird, und der Widerstand richtet sich nach der Steigung der Strecke. Dazu liefert dieses Programm die Seite selbst aus:
+
+```
+uv run ergometer.py --panel --site ~/roma
+```
+
+Dann im Browser http://127.0.0.1:8050/site/roma3d.html öffnen und „Live-Ergometer“ drücken (oder gleich `…/roma3d.html?live`). Kommt die Seite von einem anderen Webserver (z. B. GitHub Pages), fährt „Live-Ergometer“ ohne Fehlermeldung im Demo-Modus.
+
+- Geschwindigkeit, Rollen und Bremsen rechnet der Browser aus der gemessenen Leistung, dem eingestellten Gewicht (Fahrer + Rad), Luft- und Rollwiderstand und der Steigung.
+- Den Widerstand stellt der Browser über `/resistance` direkt als Stufe ein: Die mittlere Steigung der nächsten 100 m wird linear auf die Stufen 7 bis 15 abgebildet; leichtes Gefälle ergibt 7, die steilsten Stücke 15. Die Stufe wechselt höchstens alle 3 Sekunden und erst, wenn die Steigung deutlich anders ist. Pause mit dem Knopf oder der Leertaste (Stufe 7).
+- Die Fahrt läuft als manueller Lauf und wird wie jeder Lauf als Log gespeichert.
+- Der Knopf „Speichern ⤓“ lädt die Fahrt seit dem Start als CSV herunter (`roma-ride-<Datum-Uhrzeit>.csv`): eine Zeile pro Sekunde mit Runde, Strecke, Geschwindigkeit, Leistung, Trittfrequenz, Widerstand, Puls, Steigung, Höhe, Koordinaten und den Abständen zu Geist und Referenz.
+- Ein blauer, halbtransparenter Referenzfahrer fährt ab dem Start mit konstanter Leistung (Feld „Referenz“, in Watt) und demselben Gewicht; zu jeder neuen Runde startet er wieder gleichauf mit dem Fahrer. Die Anzeige zeigt den Abstand zu ihm in Sekunden.
+- Ist kein Ergometer verbunden oder kommen 30 Sekunden lang keine Daten, fährt die Seite im Demo-Modus weiter: Ein simulierter Fahrer dreht die Runden, die Geschwindigkeit lässt sich mit dem Tempo-Regler verstellen. Sobald am Ergometer wieder getreten wird, geht es live weiter.
+- Das Rennen startet mit dem ersten Tritt in die Pedale: Bis dahin wartet der Fahrer an der Startlinie, und die Uhr steht. Ab der zweiten Runde fährt ein roter, halbtransparenter Geistfahrer die vorige Runde nach, mit demselben Startzeitpunkt; die Anzeige zeigt den Abstand in Sekunden.
 
 ## Cockpit
 

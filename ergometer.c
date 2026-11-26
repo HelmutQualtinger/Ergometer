@@ -367,6 +367,41 @@ static const struct { const char *name, *content_type; } WEB_FILES[] = {
     {"icon-512.png", "image/png"}, {"apple-touch-icon.png", "image/png"}, {"preview.png", "image/png"},
 };
 
+/* --site DIR: a web app served under /site/ from the same origin as /data and /target, so it can read the
+ * measured values and set the target power without CORS (e.g. the Rome ride in Live-Ergometer mode). */
+static char SITE_DIR[PATH_MAX];
+static const struct { const char *suffix, *content_type; } SITE_TYPES[] = {
+    {".html", "text/html; charset=utf-8"}, {".js", "text/javascript; charset=utf-8"}, {".mjs", "text/javascript; charset=utf-8"},
+    {".json", "application/json"}, {".css", "text/css; charset=utf-8"}, {".png", "image/png"}, {".jpg", "image/jpeg"},
+    {".jpeg", "image/jpeg"}, {".svg", "image/svg+xml"}, {".webp", "image/webp"}, {".ico", "image/x-icon"},
+    {".webmanifest", "application/manifest+json"}, {".txt", "text/plain; charset=utf-8"},
+};
+
+/* The file under --site DIR for the part of the path after /site, written to 'path'; false for hidden files, .. and misses. */
+static bool site_file(const char *rest, char *path) {
+    char relative[1024];
+    size_t n = 0;
+    while (*rest == '/') rest++;
+    for (; *rest && n < sizeof relative - 16; rest++) {
+        int high, low;
+        if (*rest == '%' && rest[1] && rest[2] && sscanf(rest + 1, "%1x%1x", &high, &low) == 2) {
+            relative[n++] = (char)(high * 16 + low);
+            rest += 2;
+        } else {
+            relative[n++] = *rest;
+        }
+    }
+    relative[n] = 0;
+    if (!n || relative[n - 1] == '/') strcat(relative, "index.html");
+    for (const char *part = relative; part; part = strchr(part, '/') ? strchr(part, '/') + 1 : NULL)
+        if (*part == '.') return false;
+    char joined[PATH_MAX + 1100];
+    snprintf(joined, sizeof joined, "%s/%s", SITE_DIR, relative);
+    struct stat info;
+    size_t root = strlen(SITE_DIR);
+    return realpath(joined, path) && !strncmp(path, SITE_DIR, root) && path[root] == '/' && !stat(path, &info) && S_ISREG(info.st_mode);
+}
+
 /* The settings from the .env file; variables that are already set in the environment win. */
 static void read_env(void) {
     char *text = read_file(program_file(".env")), *rest = text, *line;
@@ -1190,6 +1225,24 @@ static void http_get(struct client *connection, const char *path, const char *qu
         );
         unlock();
         free_names(names, name_count);
+    } else if (*SITE_DIR && !strcmp(path, "/site")) {
+        static const char moved[] = "HTTP/1.1 301 Moved Permanently\r\nLocation: /site/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        client_send(connection, moved, sizeof moved - 1);
+        return;
+    } else if (*SITE_DIR && !strncmp(path, "/site/", 6)) {
+        char file[PATH_MAX];
+        size_t length;
+        char *body = site_file(path + 5, file) ? read_file_length(file, &length) : NULL;
+        if (!body) {
+            http_reply(connection, 404, "text/plain", "not found\n", 10);
+            return;
+        }
+        const char *type = "application/octet-stream", *dot = strrchr(file, '.');
+        for (size_t i = 0; dot && i < sizeof SITE_TYPES / sizeof *SITE_TYPES; i++)
+            if (!strcasecmp(dot, SITE_TYPES[i].suffix)) type = SITE_TYPES[i].content_type;
+        http_reply(connection, 200, type, body, length);
+        free(body);
+        return;
     } else {
         for (size_t i = 0; i < sizeof WEB_FILES / sizeof *WEB_FILES; i++) {
             if (strcmp(path + 1, WEB_FILES[i].name)) continue;
@@ -1212,8 +1265,8 @@ static void http_get(struct client *connection, const char *path, const char *qu
 static void http_post(struct client *connection, const char *path, const char *request) {
     const char *error = NULL;
     char name[256] = "", action[32] = "";
-    double power;
-    bool has_power = json_number(request, "power", &power);
+    double power, level = 0;
+    bool has_power = json_number(request, "power", &power), set_level = false;
     bool has_name = json_string(request, "name", name, sizeof name);
     json_string(request, "action", action, sizeof action);
     bool is_profile = !strcmp(path, "/profile"), known = false;
@@ -1233,6 +1286,17 @@ static void http_post(struct client *connection, const char *path, const char *r
             if (has_steps) stop_profile();
             CONTROL.target_power = limit;
             printf("%s  target power: %g W\n", stamp(), CONTROL.target_power);
+        }
+    } else if (!strcmp(path, "/resistance")) {
+        /* A fixed resistance level, e.g. from the gradient of the Rome ride: the power control steps aside. */
+        if (!json_number(request, "level", &level)) {
+            error = "level is missing";
+        } else if (!CONTROL.connected) {
+            error = "ergometer not connected";
+        } else {
+            if (has_steps) stop_profile();
+            CONTROL.target_power = 0;
+            set_level = true;
         }
     } else if (is_profile && known) {
         char file[300];
@@ -1280,6 +1344,8 @@ static void http_post(struct client *connection, const char *path, const char *r
     unlock();
     http_reply(connection, error ? 400 : 200, "application/json", json.text, json.length);
     free(json.text);
+    /* after the reply: the write waits 1.5 s for the level the ergometer reports */
+    if (set_level && !set_resistance(level)) printf("%s  could not set resistance\n", stamp());
 }
 
 /* One request per connection. */
@@ -1394,7 +1460,9 @@ static void start_panel(int port, bool open_browser) {
     }
     if (*MQTT_HOST && *MQTT_PORT) pthread_create(&thread, NULL, follow_temperature, NULL);
     snprintf(url, sizeof url, "http://127.0.0.1:%d/", port);
-    printf("Panel: %s\nPhone: %s\n", url, COMPANION.url);
+    printf("Panel: %s\n", url);
+    if (*SITE_DIR) printf("Site: %ssite/ (%s)\n", url, SITE_DIR);
+    printf("Phone: %s\n", COMPANION.url);
     qr_print();
     if (*COMPANION.certificate) printf("Certificate for the phone (install once): %s\n", COMPANION.certificate);
     if (open_browser) {
@@ -1671,7 +1739,7 @@ static void *wait_for_interrupt(void *unused) {
 
 static void usage(const char *program) {
     printf("usage: %s [--name NAME] [--address ADDRESS] [--timeout S] [--panel] [--port PORT]\n"
-           "       %*s [--power W] [--profile FILE] [--raw] [--scan]\n\n"
+           "       %*s [--power W] [--profile FILE] [--raw] [--scan] [--site DIR]\n\n"
            "Show live values from a Christopeit AX 4000 ergometer.\n\n"
            "  --name NAME        name fragment to look for (default: FS-... / Christopeit / any fitness machine)\n"
            "  --address ADDRESS  connect to this device address (a UUID on macOS)\n"
@@ -1681,7 +1749,8 @@ static void usage(const char *program) {
            "  --power W          target power in W, held by adjusting the resistance level\n"
            "  --profile FILE     CSV file with rows mm:ss,watt; the target power follows it once connected\n"
            "  --raw              also print raw bytes of all other notifications\n"
-           "  --scan             only list nearby BLE devices\n",
+           "  --scan             only list nearby BLE devices\n"
+           "  --site DIR         also serve the web app in this directory under /site/ (e.g. ~/roma)\n",
            program, (int)strlen(program), "");
 }
 
@@ -1690,7 +1759,7 @@ int main(int argc, char **argv) {
         {"name", required_argument, NULL, 'n'}, {"address", required_argument, NULL, 'a'}, {"timeout", required_argument, NULL, 't'},
         {"panel", no_argument, NULL, 'P'}, {"port", required_argument, NULL, 'p'}, {"power", required_argument, NULL, 'w'},
         {"profile", required_argument, NULL, 'f'}, {"raw", no_argument, NULL, 'r'}, {"scan", no_argument, NULL, 's'},
-        {"help", no_argument, NULL, 'h'}, {0}};
+        {"site", required_argument, NULL, 'S'}, {"help", no_argument, NULL, 'h'}, {0}};
     for (int option; (option = getopt_long(argc, argv, "h", options, NULL)) != -1;) {
         switch (option) {
         case 'n': ARGS.name = optarg; break;
@@ -1702,6 +1771,12 @@ int main(int argc, char **argv) {
         case 'f': ARGS.profile = optarg; break;
         case 'r': RAW = true; break;
         case 's': ARGS.scan = true; break;
+        case 'S':
+            if (!realpath(optarg, SITE_DIR)) {
+                fprintf(stderr, "--site: %s is not a directory\n", optarg);
+                return 2;
+            }
+            break;
         case 'h': usage(argv[0]); return 0;
         default: usage(argv[0]); return 2;
         }

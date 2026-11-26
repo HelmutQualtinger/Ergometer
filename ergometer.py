@@ -34,7 +34,7 @@ import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from bleak import BleakClient, BleakScanner
 
@@ -183,6 +183,13 @@ CONTROL = {"loop": None, "client": None, "range": None, "power_range": [0, MAX_T
            # The run that ended last, [start, end, profile name]: a panel that is loaded afterwards still shows it.
            "last_run": None}
 LOG_DIR = PANEL_HTML.parent / "logs"
+# --site DIR: a web app served under /site/ from the same origin as /data and /target, so it can read the
+# measured values and set the target power without CORS (e.g. the Rome ride in Live-Ergometer mode).
+SITE = {"dir": None}
+SITE_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
+              ".json": "application/json", ".css": "text/css; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg",
+              ".jpeg": "image/jpeg", ".svg": "image/svg+xml", ".webp": "image/webp", ".ico": "image/x-icon",
+              ".webmanifest": "application/manifest+json", ".txt": "text/plain; charset=utf-8"}
 PROFILE_DIR = PANEL_HTML.parent / "profiles"
 # The panel for a phone in the same network: {"address", "url", "qr", "certificate"}; see update_companion().
 COMPANION = {}
@@ -608,6 +615,18 @@ class PanelHandler(BaseHTTPRequestHandler):
                        # Lets an open page notice that panel.html was edited and reload itself.
                        "panel_version": PANEL_HTML.stat().st_mtime}
             body, content_type = json.dumps(payload).encode(), "application/json"
+        elif SITE["dir"] and url.path == "/site":
+            self.send_response(301)
+            self.send_header("Location", "/site/")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        elif SITE["dir"] and url.path.startswith("/site/"):
+            path = site_file(url.path[len("/site"):])
+            if not path:
+                self.send_error(404)
+                return
+            body, content_type = path.read_bytes(), SITE_TYPES.get(path.suffix.lower(), "application/octet-stream")
         elif url.path.lstrip("/") in WEB_FILES:
             # Icons, manifest and link preview for the phone's home screen, from web/.
             name = url.path.lstrip("/")
@@ -628,6 +647,14 @@ class PanelHandler(BaseHTTPRequestHandler):
                     stop_profile()
                 CONTROL["target_power"] = limit(request["power"])
                 print(f"{stamp()}  target power: {CONTROL['target_power']:g} W")
+            elif self.path == "/resistance":
+                # A fixed resistance level, e.g. from the gradient of the Rome ride: the power control steps aside.
+                if profile and profile["steps"]:
+                    stop_profile()
+                CONTROL["target_power"] = 0
+                if not CONTROL["client"] or not CONTROL["range"]:
+                    raise ValueError("ergometer not connected")
+                asyncio.run_coroutine_threadsafe(set_resistance(float(request["level"])), CONTROL["loop"])
             elif self.path == "/profile" and request.get("name") in profile_files():
                 load_profile(request["name"], (PROFILE_DIR / request["name"]).read_text())
                 CONTROL["target_power"] = 0
@@ -668,6 +695,18 @@ class PanelHandler(BaseHTTPRequestHandler):
         pass
 
 
+def site_file(rest: str) -> Path | None:
+    """The file under --site DIR for the part of the path after /site, or None (hidden files and .. are refused)."""
+    root = SITE["dir"]
+    relative = unquote(rest).lstrip("/")
+    if not relative or relative.endswith("/"):
+        relative += "index.html"
+    if any(part.startswith(".") for part in relative.split("/")):
+        return None
+    path = (root / relative).resolve()
+    return path if path.is_relative_to(root) and path.is_file() else None
+
+
 def start_panel(port: int, open_browser: bool = True):
     # The panel listens in the whole local network, so a phone can be the remote control at the
     # ergometer: anyone in that network can open it. The QR code only saves typing the address.
@@ -684,6 +723,8 @@ def start_panel(port: int, open_browser: bool = True):
         threading.Thread(target=follow_temperature, daemon=True).start()
     url = f"http://127.0.0.1:{port}/"
     print(f"Panel: {url}")
+    if SITE["dir"]:
+        print(f"Site: {url}site/ ({SITE['dir']})")
     print(f"Phone: {COMPANION['url']}\n{qr_text(COMPANION['qr'])}")
     if COMPANION["certificate"]:
         print(f"Certificate for the phone (install once): {COMPANION['certificate']}")
@@ -865,8 +906,14 @@ def main():
     parser.add_argument("--profile", help="CSV file with rows mm:ss,watt; the target power follows it once connected")
     parser.add_argument("--raw", action="store_true", help="also print raw bytes of all other notifications")
     parser.add_argument("--scan", action="store_true", help="only list nearby BLE devices")
+    parser.add_argument("--site", help="also serve the web app in this directory under /site/ (e.g. ~/roma)")
+    args = parser.parse_args()
+    if args.site:
+        SITE["dir"] = Path(args.site).expanduser().resolve()
+        if not SITE["dir"].is_dir():
+            parser.error(f"--site: {args.site} is not a directory")
     try:
-        asyncio.run(run(parser.parse_args()))
+        asyncio.run(run(args))
     except KeyboardInterrupt:
         print("\nStopped.")
     finally:
