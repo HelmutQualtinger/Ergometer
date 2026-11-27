@@ -127,12 +127,14 @@ def trim_idle(rows: list[dict]) -> list[dict]:
     return [row | {"seconds": row["seconds"] - kept[0]["seconds"]} for row in kept]
 
 
-def analyse(paths: list[Path], temperature: float | None, betablocker: bool, trim: bool = False) -> dict:
+def analyse(paths: list[Path], temperature: float | None, betablocker: bool, trim: bool = False, target: float | None = None) -> dict:
     runs, parts, offset, previous_end = [], [], 0.0, None
     series = {"t": [], "power": [], "target": [], "pulse": [], "cadence": []}
     levels, distance, speed, room, pedalling = {}, 0.0, 0.0, [], []
     for path in paths:
         rows = trim_idle(read_log(path)) if trim else read_log(path)
+        if target:  # a ride without a target (a free ride, the level set by an app) measured against one given afterwards
+            rows = [row | {"target": target} if not row["target"] else row for row in rows]
         start = datetime.fromisoformat(rows[0]["time"])
         runs.append(summary(rows) | {"file": path.name, "start": rows[0]["time"][11:16], "offset": offset,
                                      "pause": (start - previous_end).total_seconds() if previous_end else None})
@@ -454,13 +456,14 @@ def main():
     parser.add_argument("--unrecorded", metavar="MIN/KCAL[/HF]", help="a part ridden after the logs without recording, from the display; "
                         "shown on the page and, with --training, filed as a row of its own")
     parser.add_argument("--unrecorded-before", action="store_true", help="the --unrecorded part was ridden before the logs, not after")
+    parser.add_argument("--target", type=float, help="a target power in watts for the stretches of the logs that had none (a free ride)")
     parser.add_argument("--trim-idle", action="store_true", help="drop the standing before the first and after the last pedal stroke of each log")
     parser.add_argument("--assessment", action="append", default=[], help="a paragraph of assessment for the page, in words; repeat for more paragraphs")
     args = parser.parse_args()
 
     logs = Path(__file__).with_name("logs")
     paths = [Path(log) for log in args.logs] or [max(logs.glob("log-*.csv"), key=lambda p: p.stat().st_mtime)]
-    result = analyse(paths, args.temperature, args.betablocker, args.trim_idle)
+    result = analyse(paths, args.temperature, args.betablocker, args.trim_idle, args.target)
     result["assessment"] = args.assessment
     entry = training_row(result) | {"Kommentar": args.note or DEFAULT_NOTE, "RR_training": args.rr or ""}
     result["entry"], result["entry_new"] = file_in_training(entry, args.rr, args.note) if args.training else (entry, False)
