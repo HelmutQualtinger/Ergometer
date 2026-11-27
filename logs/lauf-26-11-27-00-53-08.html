@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lauf 27.11.2026, 00:53 Uhr</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  :root { color-scheme: light dark; --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+          --grid: #e1e0d9; --axis: #c3c2b7; --series-1: #2a78d6; --series-2: #eb6834; }
+  @media (prefers-color-scheme: dark) { :root { --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --grid: #2c2c2a;
+          --axis: #383835; --series-1: #3987e5; --series-2: #d95926; } }
+  body { margin: 0; padding: 20px 16px 40px; background: var(--page); color: var(--ink); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0; }
+  h2 { font-size: 16px; margin: 0 0 2px; }
+  .sub { color: var(--ink-2); margin: 2px 0 16px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 10px; }
+  .card { background: var(--surface); border: 1px solid var(--grid); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; min-width: 0; }
+  .tiles .card { margin: 0; }
+  .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; }
+  .label, .note { color: var(--ink-2); font-size: 13px; }
+  .value { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .value small { font-size: 14px; font-weight: 400; color: var(--ink-2); }
+  .plot { height: 300px; }
+  .plot.low { height: 220px; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
+  th:first-child, td:first-child { text-align: left; white-space: normal; }
+  tr.total td, tr.work td:first-child { font-weight: 700; }
+  tr.total td { border-bottom: 0; }
+  ul { margin: 6px 0 0; padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  #assessment p { margin: 6px 0 0; }
+  .back { font-size: 13px; color: var(--ink-2); }
+  .back a { color: inherit; }
+</style>
+</head>
+<body>
+<main>
+<nav class="back"><a href="index.html">← Trainingskalender</a> · <a href="../../training/training.html">Trainingsübersicht</a></nav>
+<h1>Lauf vom 27.11.2026, 00:53 Uhr</h1>
+<p class="sub" id="sub"></p>
+<section class="tiles" id="tiles"></section>
+<section class="card" id="assessment-card"><h2>Bewertung</h2><div id="assessment"></div></section>
+<section class="pair">
+  <div class="card"><h2>Beobachtungen</h2><ul id="remarks"></ul></div>
+  <div class="card"><h2>Eintrag im Trainingslog</h2><div class="note" id="entry-note"></div><div class="scroll"><table id="entry"></table></div></div>
+</section>
+<section class="card"><h2>Leistung im Verlauf</h2><div class="note">Ist und Vorgabe über die gefahrene Zeit</div><div class="plot" id="power"></div></section>
+<section class="pair">
+  <div class="card"><h2>Puls im Verlauf</h2><div class="note">Gleitendes Mittel über 10 Sekunden</div><div class="plot low" id="pulse"></div></div>
+  <div class="card"><h2>Trittfrequenz im Verlauf</h2><div class="note">Gleitendes Mittel über 20 Sekunden</div><div class="plot low" id="cadence"></div></div>
+</section>
+<section class="card"><h2>Ist gegen Vorgabe je Abschnitt</h2><div class="note">Mittlere Leistung jedes Abschnitts mit gleicher Vorgabe, dazu der höchste Einzelwert</div><div class="plot" id="bars"></div></section>
+<section class="pair">
+  <div class="card"><h2>Abschnitte</h2><div class="note">Fett: die harten Abschnitte</div><div class="scroll"><table id="sections"></table></div></div>
+  <div>
+    <div class="card"><h2>Nach Vorgabestufe</h2><div class="note">Alle Abschnitte mit derselben Zielleistung zusammengenommen</div><div class="scroll"><table id="levels"></table></div></div>
+    <div class="card" id="runs-card"><h2>Aufzeichnungen</h2><div class="scroll"><table id="runs"></table></div></div>
+  </div>
+</section>
+<p class="note">Kalorien: Arbeit am Pedal bei 25 % Wirkungsgrad, wie im Trainingslog.</p>
+</main>
+<script>
+const D = {"peak_at": 63.9, "peak_target": 180.0, "date": "27.11", "betablocker": true, "runs": [{"seconds": 84.7, "kj": 13.5691, "kcal": 12.969271206690562, "power": 160.20188902007084, "power_max": 207.0, "cadence": 71.50153846153846, "pulse": 96.97407407407407, "pulse_max": 100.0, "file": "log-26-11-27-00-53-08.csv", "start": "00:53", "offset": 0.0, "pause": null}], "series": {"t": [0.0, 0.002, 0.007, 0.01, 0.017, 0.018, 0.025, 0.027, 0.032, 0.035, 0.042, 0.043, 0.05, 0.052, 0.058, 0.062, 0.067, 0.07, 0.075, 0.078, 0.088, 0.092, 0.093, 0.097, 0.102, 0.105, 0.115, 0.117, 0.12, 0.123, 0.127, 0.132, 0.137, 0.142, 0.145, 0.15, 0.155, 0.158, 0.16, 0.17, 0.172, 0.175, 0.177, 0.183, 0.187, 0.192, 0.195, 0.2, 0.203, 0.208, 0.212, 0.217, 0.22, 0.225, 0.23, 0.233, 0.238, 0.242, 0.247, 0.252, 0.255, 0.26, 0.265, 0.268, 0.273, 0.277, 0.282, 0.287, 0.29, 0.295, 0.3, 0.305, 0.308, 0.312, 0.317, 0.322, 0.327, 0.33, 0.335, 0.337, 0.343, 0.345, 0.353, 0.355, 0.36, 0.362, 0.368, 0.37, 0.377, 0.378, 0.385, 0.388, 0.393, 0.402, 0.405, 0.407, 0.412, 0.415, 0.418, 0.423, 0.427, 0.432, 0.437, 0.442, 0.445, 0.452, 0.457, 0.458, 0.463, 0.467, 0.472, 0.477, 0.48, 0.485, 0.49, 0.493, 0.498, 0.502, 0.505, 0.513, 0.515, 0.52, 0.522, 0.528, 0.53, 0.537, 0.538, 0.545, 0.547, 0.553, 0.56, 0.563, 0.565, 0.57, 0.573, 0.578, 0.582, 0.587, 0.592, 0.595, 0.6, 0.605, 0.608, 0.613, 0.62, 0.623, 0.627, 0.632, 0.635, 0.64, 0.645, 0.648, 0.653, 0.657, 0.662, 0.667, 0.67, 0.673, 0.678, 0.687, 0.69, 0.697, 0.698, 0.705, 0.713, 0.715, 0.722, 0.723, 0.73, 0.733, 0.738, 0.742, 0.747, 0.75, 0.755, 0.76, 0.763, 0.768, 0.772, 0.777, 0.782, 0.785, 0.79, 0.795, 0.798, 0.803, 0.807, 0.812, 0.817, 0.82, 0.825, 0.83, 0.833, 0.838, 0.84, 0.847, 0.848, 0.855, 0.857, 0.863, 0.865, 0.872, 0.873, 0.88, 0.882, 0.888, 0.892, 0.897, 0.9, 0.905, 0.908, 0.913, 0.917, 0.922, 0.927, 0.93, 0.935, 0.94, 0.943, 0.948, 0.953, 0.957, 0.962, 0.965, 0.97, 0.975, 0.98, 0.983, 0.988, 0.992, 0.997, 1.002, 1.005, 1.01, 1.013, 1.017, 1.022, 1.025, 1.03, 1.033, 1.04, 1.042, 1.047, 1.05, 1.057, 1.058, 1.065, 1.067, 1.072, 1.077, 1.082, 1.085, 1.09, 1.093, 1.098, 1.102, 1.107, 1.112, 1.115, 1.12, 1.125, 1.128, 1.133, 1.138, 1.142, 1.147, 1.15, 1.155, 1.16, 1.173, 1.177, 1.182, 1.183, 1.19, 1.198, 1.2, 1.207, 1.208, 1.215, 1.217, 1.223, 1.227, 1.232, 1.235, 1.24, 1.243, 1.248, 1.252, 1.257, 1.262, 1.265, 1.27, 1.275, 1.278, 1.283, 1.288, 1.292, 1.297, 1.3, 1.305, 1.31, 1.315, 1.318, 1.323, 1.327, 1.332, 1.337, 1.34, 1.345, 1.35, 1.352, 1.358, 1.36, 1.367, 1.368, 1.375, 1.377, 1.383, 1.385, 1.392, 1.393, 1.4, 1.402, 1.408, 1.412, null], "power": [176.0, 176.0, 176.0, 176.0, 176.0, 176.0, 179.0, 179.0, 179.0, 179.0, 179.0, 179.0, 179.0, 179.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 134.0, 134.0, 134.0, 134.0, 134.0, 134.0, 205.0, 205.0, 205.0, 205.0, 205.0, 205.0, 205.0, 205.0, 192.0, 192.0, 192.0, 192.0, 192.0, 191.0, 191.0, 191.0, 191.0, 191.0, 191.0, 191.0, 191.0, 182.0, 182.0, 182.0, 182.0, 182.0, 182.0, 182.0, 182.0, 191.0, 191.0, 191.0, 191.0, 191.0, 191.0, 191.0, 191.0, 172.0, 172.0, 172.0, 172.0, 172.0, 172.0, 172.0, 172.0, 168.0, 168.0, 168.0, 168.0, 168.0, 168.0, 168.0, 168.0, 168.0, 168.0, 168.0, 168.0, 168.0, 168.0, 168.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 170.0, 148.0, 148.0, 148.0, 148.0, 148.0, 148.0, 148.0, 168.0, 168.0, 168.0, 168.0, 168.0, 168.0, 175.0, 175.0, 175.0, 175.0, 175.0, 175.0, 151.0, 151.0, 151.0, 151.0, 151.0, 151.0, 151.0, 151.0, 151.0, 151.0, 151.0, 151.0, 151.0, 151.0, 131.0, 131.0, 131.0, 131.0, 131.0, 131.0, 128.0, 128.0, 128.0, 128.0, 128.0, 128.0, 128.0, 131.0, 131.0, 131.0, 131.0, 131.0, 140.0, 140.0, 140.0, 140.0, 140.0, 140.0, 140.0, 128.0, 128.0, 128.0, 128.0, 128.0, 128.0, 164.0, 164.0, 164.0, 164.0, 164.0, 164.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 140.0, 140.0, 140.0, 140.0, 140.0, 140.0, 140.0, 140.0, 140.0, 140.0, 140.0, 140.0, 140.0, 137.0, 137.0, 137.0, 137.0, 137.0, 137.0, 137.0, 137.0, 140.0, 140.0, 140.0, 140.0, 140.0, 140.0, 148.0, 148.0, 148.0, 148.0, 148.0, 148.0, 144.0, 144.0, 144.0, 144.0, 144.0, 144.0, 148.0, 148.0, 148.0, 148.0, 148.0, 148.0, 144.0, 144.0, 144.0, 144.0, 144.0, 144.0, 144.0, 137.0, 137.0, 137.0, 137.0, 137.0, 137.0, 207.0, 207.0, 207.0, 207.0, 207.0, 207.0, 199.0, 199.0, 199.0, 199.0, 199.0, 199.0, 187.0, 187.0, 187.0, 187.0, 187.0, 187.0, 164.0, 164.0, 164.0, 164.0, 164.0, 164.0, 164.0, 164.0, 164.0, 141.0, 141.0, 141.0, 141.0, 141.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 159.0, 159.0, 159.0, 159.0, 159.0, 159.0, 176.0, 176.0, 176.0, 176.0, 176.0, 176.0, 162.0, 162.0, 162.0, 162.0, 162.0, 162.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, 152.0, null], "target": [180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, 180.0, null], "pulse": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 94.6, 94.6, 94.6, 94.7, 94.6, 94.5, 94.6, 94.6, 94.6, 94.7, 94.7, 94.7, 94.8, 94.8, 94.9, 94.9, 94.9, 94.9, 95.0, 95.0, 95.0, 95.0, 95.0, 95.0, 95.1, 95.2, 95.2, 95.3, 95.3, 95.3, 95.3, 95.4, 95.4, 95.4, 95.4, 95.4, 95.4, 95.5, 95.5, 95.5, 95.5, 95.6, 95.6, 95.6, 95.7, 95.7, 95.7, 95.7, 95.7, 95.7, 95.7, 95.8, 95.8, 95.7, 95.7, 95.7, 95.7, 95.7, 95.8, 95.8, 95.8, 95.9, 95.9, 95.9, 95.9, 95.9, 95.9, 95.9, 95.9, 95.9, 95.9, 95.9, 95.8, 95.8, 95.8, 95.8, 95.8, 95.8, 95.8, 95.7, 95.7, 95.7, 95.7, 95.8, 95.8, 95.8, 95.8, 95.8, 95.8, 95.8, 95.7, 95.7, 95.6, 95.6, 95.6, 95.6, 95.5, 95.5, 95.5, 95.5, 95.5, 95.5, 95.5, 95.5, 95.5, 95.5, 95.5, 95.5, 95.5, 95.6, 95.6, 95.7, 95.7, 95.7, 95.7, 95.7, 95.8, 95.8, 95.9, 95.8, 95.8, 95.9, 95.9, 95.9, 96.0, 96.1, 96.1, 96.2, 96.2, 96.2, 96.3, 96.3, 96.4, 96.5, 96.5, 96.5, 96.5, 96.6, 96.6, 96.6, 96.7, 96.7, 96.7, 96.7, 96.8, 96.8, 96.9, 96.9, 97.0, 97.0, 97.1, 97.2, 97.2, 97.2, 97.3, 97.3, 97.3, 97.4, 97.4, 97.4, 97.5, 97.5, 97.5, 97.5, 97.6, 97.6, 97.6, 97.6, 97.7, 97.7, 97.7, 97.7, 97.8, 97.8, 97.8, 97.8, 97.9, 97.9, 97.9, 97.9, 98.0, 98.0, 98.0, 98.0, 98.0, 98.0, 98.0, 98.0, 98.0, 98.0, 98.0, 98.0, 98.0, 98.0, 98.0, 98.0, 98.0, 98.0, 98.0, 98.1, 98.1, 98.1, 98.1, 98.2, 98.2, 98.2, 98.2, 98.3, 98.3, 98.3, 98.4, 98.4, 98.4, 98.5, 98.5, 98.6, 98.6, 98.6, 98.6, 98.7, 98.8, 98.8, 98.8, 98.9, 98.9, 99.0, 99.1, 99.1, 99.2, 99.2, 99.3, 99.3, 99.3, 99.4, 99.4, 99.4, 99.4, 99.5, 99.5, 99.5, 99.5, 99.6, 99.6, 99.6, 99.6, 99.7, 99.7, 99.7, 99.7, 99.8, 99.8, 99.8, 99.8, 99.9, 99.9, 99.9, 99.9, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0, null], "cadence": [73.6, 73.6, 73.2, 72.8, 72.6, 72.6, 72.3, 72.3, 72.1, 71.9, 71.6, 71.6, 71.2, 71.2, 70.9, 70.9, 70.7, 70.7, 70.5, 70.5, 70.2, 70.2, 70.1, 70.1, 69.9, 69.9, 69.5, 69.5, 69.4, 69.3, 69.3, 69.2, 69.0, 68.8, 68.7, 68.6, 68.4, 68.4, 68.3, 67.7, 67.7, 67.6, 67.5, 67.2, 66.8, 66.7, 66.2, 66.0, 65.7, 65.7, 65.2, 65.2, 64.8, 64.8, 64.5, 64.5, 64.2, 64.2, 63.9, 63.9, 63.9, 63.8, 63.6, 63.6, 63.5, 63.5, 63.5, 63.3, 63.3, 63.1, 63.1, 63.0, 63.0, 62.9, 62.9, 62.8, 62.7, 62.6, 62.6, 62.6, 62.5, 62.5, 62.7, 62.8, 62.8, 62.8, 62.9, 63.0, 63.1, 63.3, 63.4, 63.5, 63.7, 63.8, 63.9, 64.0, 64.1, 64.2, 64.2, 64.2, 64.3, 64.4, 64.5, 64.7, 64.8, 64.9, 65.1, 65.1, 65.2, 65.3, 65.3, 65.5, 65.6, 65.7, 65.8, 65.8, 66.0, 66.0, 66.2, 66.4, 66.4, 66.4, 66.5, 66.7, 66.8, 66.9, 66.9, 67.0, 67.1, 67.2, 67.4, 67.5, 67.5, 67.6, 67.7, 67.7, 67.8, 67.8, 67.9, 67.9, 68.1, 68.4, 68.5, 68.7, 69.0, 69.1, 69.2, 69.4, 69.5, 69.7, 69.9, 69.9, 70.1, 70.2, 70.3, 70.4, 70.5, 70.6, 70.6, 70.7, 70.7, 70.7, 70.8, 70.7, 70.6, 70.6, 70.6, 70.6, 70.5, 70.5, 70.5, 70.5, 70.5, 70.5, 70.5, 70.5, 70.5, 70.5, 70.5, 70.6, 70.6, 70.6, 70.7, 70.8, 70.8, 70.9, 70.9, 70.9, 71.0, 71.0, 71.2, 71.3, 71.3, 71.4, 71.4, 71.6, 71.6, 71.6, 71.6, 71.7, 71.7, 71.8, 71.8, 71.7, 71.7, 71.7, 71.7, 71.7, 72.1, 72.3, 72.4, 72.7, 72.9, 73.2, 73.7, 73.7, 73.9, 74.0, 74.0, 74.3, 74.3, 74.3, 74.5, 74.5, 74.6, 74.8, 74.8, 74.9, 75.0, 75.0, 75.1, 75.2, 75.2, 75.3, 75.3, 75.5, 75.5, 75.6, 75.6, 75.7, 75.8, 75.8, 75.8, 76.1, 76.2, 76.2, 76.4, 76.4, 76.5, 76.7, 76.8, 77.0, 77.1, 77.1, 77.4, 77.4, 77.5, 77.8, 77.8, 78.0, 78.3, 78.3, 78.5, 78.6, 78.6, 78.8, 78.9, 78.9, 79.1, 79.3, 79.3, 79.5, 79.4, 79.6, 79.8, 79.8, 79.8, 79.9, 80.2, 80.2, 80.3, 80.5, 80.5, 80.2, 80.1, 80.1, 79.9, 79.8, 79.7, 79.5, 79.5, 79.4, 79.3, 79.3, 79.1, 79.0, 79.0, 78.9, 78.9, 78.9, 78.8, 78.8, 78.9, 78.9, 78.9, 78.9, 78.9, 78.9, 79.0, 79.1, 79.1, 79.2, 79.2, 79.3, 79.3, 79.4, 79.5, 79.6, 79.6, 79.6, 79.6, 79.7, 79.7, 79.8, 79.7, null]}, "sections": [{"seconds": 84.7, "kj": 13.5691, "kcal": 12.969271206690562, "power": 160.20188902007084, "power_max": 207.0, "cadence": 71.50153846153846, "pulse": 96.97407407407407, "pulse_max": 100.0, "start": 0.0, "target": 180.0, "reached": 0.0, "nr": 1, "work": false}], "seconds": 84.7, "kj": 13.5691, "kcal": 12.969271206690562, "power": 160.20188902007084, "power_max": 207.0, "cadence": 71.50153846153846, "pulse_max": 100.0, "distance": 0.5, "speed_max": 32.9, "temperature": 22.787692307692307, "levels": [{"target": 180.0, "seconds": 84.7, "power": 160.20188902007084, "pulse": 96.96282527881041}], "assessment": ["Kurzer Anlauf von 1:25 Minuten unmittelbar vor der Fahrt um 00:55 (Nr 199), ohne Leistungsvorgabe gefahren und hier an 180 W \u00fcber die ganze Zeit gemessen; das Stehen am Anfang (14 s) und am Ende (13 s) ist herausgenommen. Im Mittel 160 W, also 20 W unter der Vorgabe, 14 kJ, 13 kcal, 0,5 km, Trittfrequenz 72 U/min.", "In 30-Sekunden-Abschnitten lag die Leistung bei 174, 145 und 162 W; nur 42 % der Zeit lagen innerhalb von 10 % um 180 W. Die Stufe wurde von au\u00dfen gesetzt und fiel von 12 bis 15 am Anfang auf 8 bis 9 am Ende, die Trittfrequenz stieg dabei von 66 auf 79 U/min. Der H\u00f6chstwert war 207 W. Der Puls stieg von 88 auf 100; unter dem Betablocker wird er nur beschrieben."], "entry": {"Datum": "27.11", "Dauer_sek": "85", "Kcal": "13", "Watt": "160", "MaxHF": "100", "Distanz_km": "0.50", "Kadenz_rpm": "72", "Watt_Max": "207", "Max_kmh": "32.9", "Temperatur_C": "23", "Kommentar": "ohne Kinomap", "RR_training": ""}, "entry_new": false, "unrecorded": null, "unrecorded_entry": null};
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const n = (value, digits = 0) => value === null || value === undefined ? "–" : value.toLocaleString("de-DE", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+const clock = (seconds) => `${Math.floor(Math.round(seconds) / 60)}:${String(Math.round(seconds) % 60).padStart(2, "0")}`;
+const breaks = D.runs.filter((run) => run.pause !== null);
+const work = D.sections.filter((s) => s.work);
+const U = D.unrecorded;  // a part ridden without recording, as the display showed it; not in the curves
+
+document.getElementById("sub").textContent = `${D.runs.length} Aufzeichnung${D.runs.length > 1 ? "en" : ""}, Start ${D.runs.map((run) => run.start).join(" und ")} Uhr` +
+  (breaks.length ? ` · nicht aufgezeichnet dazwischen: ${breaks.map((run) => clock(run.pause)).join(", ")} min` : "") +
+  (U ? ` · ${U.before ? "davor" : "danach"} ${clock(U.seconds)} min ohne Aufzeichnung` : "");
+document.getElementById("tiles").innerHTML = [
+  ...(U ? [["Gesamtzeit", clock(D.seconds + U.seconds), "min", `${clock(U.seconds)} ohne Aufzeichnung + ${clock(D.seconds)} aufgezeichnet`],
+           ["Energie gesamt", n(D.kcal + U.kcal), "kcal", `${n(U.kcal)} vom Display + ${n(D.kcal)} aufgezeichnet`]] : []),
+  [U ? "Aufgezeichnet" : "Gefahrene Zeit", clock(D.seconds), "min", D.runs.length > 1 ? D.runs.map((run) => clock(run.seconds)).join(" + ") : `${n(D.distance, 2)} km`],
+  ["Durchschnittsleistung", n(D.power), "W", `höchster Wert ${n(D.power_max)} W`],
+  ["Arbeit", n(D.kj), "kJ", `etwa ${n(D.kcal)} kcal`],
+  ["Höchster Puls", n(D.pulse_max), "bpm", D.betablocker ? "unter Betablocker" : ""],
+  ["Trittfrequenz", n(D.cadence), "rpm", `bis ${n(D.speed_max, 1)} km/h`],
+  ["Raumtemperatur", n(D.temperature, 1), "°C", ""],
+].map(([label, value, unit, note]) => `<div class="card"><div class="label">${label}</div><div class="value">${value} <small>${unit}</small></div><div class="note">${note}</div></div>`).join("");
+
+// What stands out, worked out from the sections.
+const remarks = [];
+if (work.length) {
+  const mean = (list, key) => list.reduce((sum, s) => sum + s[key], 0) / list.length;
+  const targets = [...new Set(work.map((s) => s.target))].sort((a, b) => a - b);
+  remarks.push(`<b>${work.length} harte Abschnitte gefahren</b> (Vorgabe ${targets.map((t) => n(t)).join(" bis ")} W), im Mittel ${n(mean(work, "power"))} W bei ${n(mean(work, "cadence"))} Umdrehungen.`);
+  const slow = work.filter((s) => s.reached === null || s.reached > 5);
+  remarks.push(slow.length ? `<b>In ${slow.length} davon kam die Zielleistung spät:</b> erst nach mehr als 5 Sekunden oder gar nicht (Abschnitt ${slow.map((s) => s.nr).join(", ")}).`
+                           : `<b>Die Zielleistung war jeweils nach höchstens ${n(Math.max(...work.map((s) => s.reached)), 0)} Sekunden erreicht.</b>`);
+  const over = work.filter((s) => s.power_max > 1.2 * s.target);
+  if (over.length) remarks.push(`<b>${over.length} Abschnitte schossen über:</b> Spitzen bis ${n(Math.max(...over.map((s) => s.power_max)))} W bei ${n(mean(over, "cadence"))} Umdrehungen im Mittel` +
+    (over.length < work.length ? `; in den übrigen waren es ${n(mean(work.filter((s) => !over.includes(s)), "cadence"))} Umdrehungen.` : "."));
+}
+remarks.push(`<b>Höchster Einzelwert ${n(D.power_max)} W</b> bei ${clock(D.peak_at)} min, als die Vorgabe ${n(D.peak_target)} W war` +
+  (work.some((s) => Math.abs(s.start + s.seconds - D.peak_at) < 5 || Math.abs(s.start - D.peak_at) < 5) ? " – ein Ausschlag am Wechsel, kein gehaltener Wert." : "."));
+if (U) remarks.push(`<b>${U.before ? "Davor" : "Danach"} ${clock(U.seconds)} min ohne Aufzeichnung</b> mit ${n(U.kcal)} kcal, daraus etwa ${n(U.power)} W und ${n(U.kj)} kJ${U.pulse ? ` und Puls ${n(U.pulse)}` : ""}, wie das Display sie zeigte; in den Kurven und Abschnitten fehlt dieser Teil.`);
+if (D.pulse_max) remarks.push(D.betablocker
+  ? `<b>Puls bis ${n(D.pulse_max)} bpm.</b> Unter Betablocker bewegt er sich kaum und sagt nichts über die Belastung.`
+  : `<b>Puls bis ${n(D.pulse_max)} bpm</b>${work.length ? `, in den harten Abschnitten im Mittel ${n(work.reduce((sum, s) => sum + (s.pulse ?? 0), 0) / work.length)}` : ""}.`);
+document.getElementById("remarks").innerHTML = remarks.map((text) => `<li>${text}</li>`).join("");
+// The assessment is the rider's and Claude's judgement in words, given on the command line; plain text, one paragraph each.
+document.getElementById("assessment-card").hidden = !D.assessment.length;
+D.assessment.forEach((text) => document.getElementById("assessment").appendChild(document.createElement("p")).textContent = text);
+
+const row = (cells, cls) => `<tr${cls ? ` class="${cls}"` : ""}>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr>`;
+const E = D.entry;
+document.getElementById("entry-note").textContent = E.Nr ? `Nr. ${E.Nr} in training_log.csv${D.entry_new ? ", eben angelegt" : ", war schon eingetragen"}` : "Noch nicht eingetragen: so würde die Zeile aussehen.";
+document.getElementById("entry").innerHTML = [
+  ["Datum", E.Datum], ["Dauer", `${E.Dauer_sek} s (${clock(+E.Dauer_sek)} min)`], ["Kcal / Watt", `${E.Kcal} / ${E.Watt}`], ["MaxHF", E.MaxHF || "–"],
+  ["RR nach Training", E.RR_training || "–"], ["Distanz, Trittfrequenz", `${E.Distanz_km} km, ${E.Kadenz_rpm} rpm`],
+  ["Watt_Max, Max_kmh", `${E.Watt_Max} W, ${E.Max_kmh} km/h`], ["Temperatur_C", E.Temperatur_C || "–"], ["Kommentar", E.Kommentar || "–"],
+].map(([label, value]) => `<tr><td>${label}</td><td style="white-space: normal">${value}</td></tr>`).join("") +
+  (D.unrecorded_entry ? `<tr><td>Nicht aufgezeichnet</td><td style="white-space: normal">${D.unrecorded_entry.Nr ? `Nr. ${D.unrecorded_entry.Nr}, eigene Zeile` : "noch nicht eingetragen"}: ` +
+    `${D.unrecorded_entry.Dauer_sek} s, ${D.unrecorded_entry.Kcal} kcal / ${D.unrecorded_entry.Watt || "–"} W (aus kcal geschätzt), MaxHF ${D.unrecorded_entry.MaxHF || "–"}</td></tr>` : "");
+
+document.getElementById("sections").innerHTML = "<tr><th>Nr.</th><th>ab</th><th>Dauer</th><th>Vorgabe</th><th>Ø Ist</th><th>Spitze</th><th>rpm</th><th>Puls</th></tr>" +
+  D.sections.map((s) => row([s.nr, clock(s.start), clock(s.seconds), `${n(s.target)} W`, `${n(s.power)} W`, `${n(s.power_max)} W`, n(s.cadence), n(s.pulse)], s.work ? "work" : "")).join("");
+document.getElementById("levels").innerHTML = "<tr><th>Vorgabe</th><th>Zeit</th><th>Ø Ist</th><th>Ø Puls</th></tr>" +
+  D.levels.map((level) => row([`${n(level.target)} W`, clock(level.seconds), `${n(level.power)} W`, level.pulse === null ? "–" : `${n(level.pulse)} bpm`])).join("");
+document.getElementById("runs-card").hidden = D.runs.length < 2 && !U;
+document.getElementById("runs").innerHTML = "<tr><th>Start</th><th>Dauer</th><th>Ø Leistung</th><th>Arbeit</th><th>kcal</th><th>Puls Ø / max</th></tr>" +
+  (U?.before ? row(["Nicht aufgezeichnet", clock(U.seconds), `${n(U.power)} W`, `${n(U.kj)} kJ`, n(U.kcal), `– / ${n(U.pulse)}`]) : "") +
+  D.runs.map((run) => row([`${run.start} Uhr`, clock(run.seconds), `${n(run.power)} W`, `${n(run.kj)} kJ`, n(run.kcal), `${n(run.pulse)} / ${n(run.pulse_max)}`])).join("") +
+  (U && !U.before ? row(["Nicht aufgezeichnet", clock(U.seconds), `${n(U.power)} W`, `${n(U.kj)} kJ`, n(U.kcal), `– / ${n(U.pulse)}`]) : "") +
+  row(["Zusammen", clock(D.seconds + (U ? U.seconds : 0)), `${n(U ? (D.kj + U.kj) * 1000 / (D.seconds + U.seconds) : D.power)} W`, `${n(D.kj + (U ? U.kj : 0))} kJ`, n(D.kcal + (U ? U.kcal : 0)),
+       `– / ${n(Math.max(D.pulse_max ?? 0, U?.pulse ?? 0) || null)}`], "total");
+
+function draw() {
+  const ink = css("--ink-2"), s1 = css("--series-1"), s2 = css("--series-2"), surface = css("--surface"), strong = css("--ink");
+  const axis = { gridcolor: css("--grid"), linecolor: css("--axis"), zeroline: false, tickfont: { color: css("--muted"), size: 12 } };
+  const title = (text) => ({ text, font: { color: ink, size: 13 } });
+  const minutes = { ...axis, title: title("Gefahrene Zeit (min)"), showgrid: false, range: [0, D.seconds / 60], hoverformat: ".1f" };
+  // Where one log ends and the next begins, with the length of the gap between them.
+  const marks = { shapes: breaks.map((run) => ({ type: "line", x0: run.offset / 60, x1: run.offset / 60, yref: "paper", y0: 0, y1: 1, line: { color: strong, width: 1, dash: "dash" } })),
+                  annotations: breaks.map((run) => ({ x: run.offset / 60, yref: "paper", y: 1, yanchor: "bottom", text: `Lücke ${clock(run.pause)} min`, showarrow: false, font: { color: ink, size: 12 } })) };
+  const base = { margin: { l: 52, r: 16, t: 24, b: 44 }, paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+                 font: { family: getComputedStyle(document.body).fontFamily, color: ink }, hovermode: "x unified",
+                 hoverlabel: { bgcolor: surface, bordercolor: css("--axis"), font: { color: strong } },
+                 legend: { orientation: "h", x: 0, y: -0.24, font: { color: ink } }, xaxis: minutes, ...marks };
+  const config = { displayModeBar: false, responsive: true };
+  Plotly.react("power", [
+    { name: "Ist", x: D.series.t, y: D.series.power, mode: "lines", connectgaps: false, line: { color: s1, width: 2 }, hovertemplate: "%{y:.0f} W<extra>Ist</extra>" },
+    { name: "Vorgabe", x: D.series.t, y: D.series.target, mode: "lines", connectgaps: false, line: { color: s2, width: 2, shape: "hv" }, hovertemplate: "%{y:.0f} W<extra>Vorgabe</extra>" },
+  ], { ...base, margin: { ...base.margin, b: 70 }, yaxis: { ...axis, title: title("Leistung (W)"), rangemode: "tozero" } }, config);
+  Plotly.react("pulse", [
+    { x: D.series.t, y: D.series.pulse, mode: "lines", connectgaps: false, line: { color: s1, width: 2 }, hovertemplate: "%{y:.1f} bpm<extra></extra>" },
+  ], { ...base, showlegend: false, yaxis: { ...axis, title: title("Puls (bpm)") } }, config);
+  Plotly.react("cadence", [
+    { x: D.series.t, y: D.series.cadence, mode: "lines", connectgaps: false, line: { color: s1, width: 2 }, hovertemplate: "%{y:.0f} rpm<extra></extra>" },
+  ], { ...base, showlegend: false, yaxis: { ...axis, title: title("Trittfrequenz (rpm)"), range: [50, Math.max(...D.series.cadence.filter((v) => v !== null)) + 5] } }, config);
+
+  // One bar per section, placed where and as wide as the section lies in time.
+  const mid = D.sections.map((s) => (s.start + s.seconds / 2) / 60), width = D.sections.map((s) => Math.max(s.seconds / 60 - 0.06, 0.05));
+  Plotly.react("bars", [
+    { name: "Ø Ist", type: "bar", x: mid, y: D.sections.map((s) => s.power), width, marker: { color: s1 },
+      customdata: D.sections.map((s) => [s.nr, s.target]), hovertemplate: "Abschnitt %{customdata[0]}: %{y:.0f} W (Vorgabe %{customdata[1]} W)<extra></extra>" },
+    { name: "Vorgabe", x: D.sections.flatMap((s) => [s.start / 60, (s.start + s.seconds) / 60, null]), y: D.sections.flatMap((s) => [s.target, s.target, null]),
+      mode: "lines", connectgaps: false, line: { color: s2, width: 2 }, hoverinfo: "skip" },
+    { name: "Spitze", x: mid, y: D.sections.map((s) => s.power_max), mode: "markers", marker: { color: surface, size: 8, line: { color: s1, width: 2 } },
+      hovertemplate: "Spitze %{y:.0f} W<extra></extra>" },
+  ], { ...base, hovermode: "closest", margin: { ...base.margin, b: 70 }, yaxis: { ...axis, title: title("Leistung (W)"), rangemode: "tozero" } }, config);
+}
+draw();
+addEventListener("load", () => document.querySelectorAll(".plot").forEach((plot) => Plotly.Plots.resize(plot)));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+</script>
+</body>
+</html>
