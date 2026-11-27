@@ -39,6 +39,9 @@ TRAINING = Path.home() / "training"  # the training log project: training_log.cs
 ADD_TRAINING = TRAINING / ".claude/skills/add-training/scripts/add_training.py"
 
 
+
+MAX_STEP = 100  # metres between two samples (a quarter to a half second apart) above which a rise in distance is a glitch
+
 def read_log(path: Path) -> list[dict]:
     with path.open(newline="") as file:
         rows = [{key: value if key == "time" else float(value or 0) for key, value in row.items()}
@@ -114,12 +117,22 @@ def sections(rows: list[dict], offset: float) -> list[dict]:
     return found
 
 
-def analyse(paths: list[Path], temperature: float | None, betablocker: bool) -> dict:
+def trim_idle(rows: list[dict]) -> list[dict]:
+    """The rows from the first to the last pedal stroke, with the time counted from the first: a log that was started
+    early or stopped late (the bike left standing while the recording ran on) does not count the standing as riding."""
+    pedalled = [index for index, row in enumerate(rows) if row["cadence"] > 0]
+    if not pedalled:
+        return rows
+    kept = rows[pedalled[0]:pedalled[-1] + 1]
+    return [row | {"seconds": row["seconds"] - kept[0]["seconds"]} for row in kept]
+
+
+def analyse(paths: list[Path], temperature: float | None, betablocker: bool, trim: bool = False) -> dict:
     runs, parts, offset, previous_end = [], [], 0.0, None
     series = {"t": [], "power": [], "target": [], "pulse": [], "cadence": []}
     levels, distance, speed, room, pedalling = {}, 0.0, 0.0, [], []
     for path in paths:
-        rows = read_log(path)
+        rows = trim_idle(read_log(path)) if trim else read_log(path)
         start = datetime.fromisoformat(rows[0]["time"])
         runs.append(summary(rows) | {"file": path.name, "start": rows[0]["time"][11:16], "offset": offset,
                                      "pause": (start - previous_end).total_seconds() if previous_end else None})
@@ -139,8 +152,9 @@ def analyse(paths: list[Path], temperature: float | None, betablocker: bool) -> 
                 level["work"] += a["power"] * (b["seconds"] - a["seconds"])
                 if a["heart rate"] > 0:
                     level["pulse"].append(a["heart rate"])
-        # The ergometer counts the distance from when it woke up, and starts again from zero now and then.
-        distance += sum(max(b.get("distance", 0) - a.get("distance", 0), 0) for a, b in zip(rows, rows[1:]))
+        # The ergometer counts the distance from when it woke up, and starts again from zero now and then; at times it
+        # also flickers between 0 and its count, so a step longer than any ride could cover between two samples is no distance.
+        distance += sum(step for a, b in zip(rows, rows[1:]) if 0 < (step := b.get("distance", 0) - a.get("distance", 0)) <= MAX_STEP)
         speed = max(speed, max(row.get("speed", 0) for row in rows))
         room += [row["room temperature"] for row in rows if row.get("room temperature")]
         pedalling += [row["cadence"] for row in rows if row["cadence"] >= 40]  # the mean is taken from what was measured
@@ -440,12 +454,13 @@ def main():
     parser.add_argument("--unrecorded", metavar="MIN/KCAL[/HF]", help="a part ridden after the logs without recording, from the display; "
                         "shown on the page and, with --training, filed as a row of its own")
     parser.add_argument("--unrecorded-before", action="store_true", help="the --unrecorded part was ridden before the logs, not after")
+    parser.add_argument("--trim-idle", action="store_true", help="drop the standing before the first and after the last pedal stroke of each log")
     parser.add_argument("--assessment", action="append", default=[], help="a paragraph of assessment for the page, in words; repeat for more paragraphs")
     args = parser.parse_args()
 
     logs = Path(__file__).with_name("logs")
     paths = [Path(log) for log in args.logs] or [max(logs.glob("log-*.csv"), key=lambda p: p.stat().st_mtime)]
-    result = analyse(paths, args.temperature, args.betablocker)
+    result = analyse(paths, args.temperature, args.betablocker, args.trim_idle)
     result["assessment"] = args.assessment
     entry = training_row(result) | {"Kommentar": args.note or DEFAULT_NOTE, "RR_training": args.rr or ""}
     result["entry"], result["entry_new"] = file_in_training(entry, args.rr, args.note) if args.training else (entry, False)
