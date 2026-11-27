@@ -42,10 +42,21 @@ ADD_TRAINING = TRAINING / ".claude/skills/add-training/scripts/add_training.py"
 
 MAX_STEP = 100  # metres between two samples (a quarter to a half second apart) above which a rise in distance is a glitch
 
+# A ride saved by the Rome 3D page (roma3d.html, Live-Ergometer mode, "Speichern"): roma-ride-<start>.csv, one row per second
+# of race time, pauses left out. It is read as it is; these are its columns under the names of an ergometer log. It has no target
+# (a free ride, the level set from the gradient), no room temperature and no ergometer counters; the distance is the page's own.
+ROMA_COLUMNS = {"time": "time", "seconds": "seconds", "speed_kmh": "speed", "cadence_rpm": "cadence", "distance_m": "distance",
+                "resistance": "resistance", "power_w": "power", "heart_rate_bpm": "heart rate"}
+
+
 def read_log(path: Path) -> list[dict]:
     with path.open(newline="") as file:
-        rows = [{key: value if key == "time" else float(value or 0) for key, value in row.items()}
-                for row in csv.DictReader(file)]
+        reader = csv.DictReader(file)
+        if "distance_m" in (reader.fieldnames or []):
+            rows = [{name: value if name == "time" else float(value or 0) for key, name in ROMA_COLUMNS.items() if (value := row[key]) is not None}
+                    | {"target": 0.0} for row in reader]
+        else:
+            rows = [{key: value if key == "time" else float(value or 0) for key, value in row.items()} for row in reader]
     bridge_pulse(rows)
     return rows
 
@@ -479,7 +490,9 @@ def main():
 
     first = read_log(paths[0])[0]["time"]
     date = f"{first[8:10]}.{first[5:7]}.{first[:4]}, {first[11:16]} Uhr"
-    out = paths[0].with_name(paths[0].stem.replace("log-", "lauf-") + ".html")
+    # lauf-<yy-mm-dd-hh-mm-ss>.html from the start of the ride, as the calendar expects, also for a roma-ride-*.csv
+    out = paths[0].with_name(paths[0].stem.replace("log-", "lauf-") + ".html" if paths[0].stem.startswith("log-") else
+                             f"lauf-{first[2:4]}-{first[5:7]}-{first[8:10]}-{first[11:13]}-{first[14:16]}-{first[17:19]}.html")
     out.write_text(PAGE.replace("__DATE__", date).replace("__SMOOTH__", str(SMOOTH_SECONDS)).replace("__CADENCE__", str(CADENCE_SECONDS)).replace("__OVERSHOOT__", str(OVERSHOOT))
                    .replace("__EFFICIENCY__", f"{EFFICIENCY * 100:.0f}").replace("__DATA__", json.dumps(result)))
 
