@@ -43,18 +43,21 @@ ADD_TRAINING = TRAINING / ".claude/skills/add-training/scripts/add_training.py"
 MAX_STEP = 100  # metres between two samples (a quarter to a half second apart) above which a rise in distance is a glitch
 
 # A ride saved by the Rome 3D page (roma3d.html, Live-Ergometer mode, "Speichern"): roma-ride-<start>.csv, one row per second
-# of race time, pauses left out. It is read as it is; these are its columns under the names of an ergometer log. It has no target
-# (a free ride, the level set from the gradient), no room temperature and no ergometer counters; the distance is the page's own.
+# of race time, pauses left out. It is read as it is; these are its columns under the names of an ergometer log. The constant
+# power of the page's reference rider (the blue pacemaker) is the target the rider rode against; the level itself came from the
+# gradient. It has no room temperature and no ergometer counters; the distance is the page's own.
 ROMA_COLUMNS = {"time": "time", "seconds": "seconds", "speed_kmh": "speed", "cadence_rpm": "cadence", "distance_m": "distance",
-                "resistance": "resistance", "power_w": "power", "heart_rate_bpm": "heart rate"}
+                "resistance": "resistance", "power_w": "power", "heart_rate_bpm": "heart rate", "reference_power_w": "target", "lap": "lap"}
 
 
 def read_log(path: Path) -> list[dict]:
     with path.open(newline="") as file:
         reader = csv.DictReader(file)
         if "distance_m" in (reader.fieldnames or []):
-            rows = [{name: value if name == "time" else float(value or 0) for key, name in ROMA_COLUMNS.items() if (value := row[key]) is not None}
-                    | {"target": 0.0} for row in reader]
+            rows = [{name: value if name == "time" else float(value or 0) for key, name in ROMA_COLUMNS.items() if (value := row.get(key)) is not None}
+                    for row in reader]
+            for row in rows:
+                row.setdefault("target", 0.0)
         else:
             rows = [{key: value if key == "time" else float(value or 0) for key, value in row.items()} for row in reader]
     bridge_pulse(rows)
@@ -114,7 +117,8 @@ def sections(rows: list[dict], offset: float) -> list[dict]:
     """The stretches with one target power each, with what was actually ridden in them."""
     found, current, before = [], [], 0.0
     for row in rows + [None]:
-        if current and (row is None or row["target"] != current[0]["target"]):
+        # a new section where the target changes, and in a roma-ride log also at each new lap of the route
+        if current and (row is None or row["target"] != current[0]["target"] or row.get("lap") != current[0].get("lap")):
             target = current[0]["target"]
             if target > 0 and len(current) > 1:
                 # How long until the power was within 10 % of the target, coming from below or from above.
