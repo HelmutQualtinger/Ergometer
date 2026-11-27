@@ -26,6 +26,8 @@ from datetime import datetime
 from pathlib import Path
 from statistics import mean
 
+from kinomap import CURVE, FTP, STEPS, best_mean  # the power curve and the calendar's intensity steps, as on the Kinomap pages
+
 SMOOTH_SECONDS = 10  # the pulse curve is a moving average over this window
 PULSE_FLOOR = 80     # bpm; readings below this are a strap that lost contact and get bridged (bridge_pulse)
 PULSE_MERGE = 180    # s; dropouts closer together than this are one, the readings between them are bridged too
@@ -146,6 +148,7 @@ def analyse(paths: list[Path], temperature: float | None, betablocker: bool, tri
     runs, parts, offset, previous_end = [], [], 0.0, None
     series = {"t": [], "power": [], "target": [], "pulse": [], "cadence": []}
     levels, distance, speed, room, pedalling = {}, 0.0, 0.0, [], []
+    per_second, zones = [], [0.0] * (len(STEPS) + 1)  # the power once a second over all logs, and the time in each intensity step
     for path in paths:
         rows = trim_idle(read_log(path)) if trim else read_log(path)
         if target:  # a ride without a target (a free ride, the level set by an app) measured against one given afterwards
@@ -173,6 +176,14 @@ def analyse(paths: list[Path], temperature: float | None, betablocker: bool, tri
         # also flickers between 0 and its count, so a step longer than any ride could cover between two samples is no distance.
         distance += sum(step for a, b in zip(rows, rows[1:]) if 0 < (step := b.get("distance", 0) - a.get("distance", 0)) <= MAX_STEP)
         speed = max(speed, max(row.get("speed", 0) for row in rows))
+        # the logs sample two to four times a second (a roma-ride once): hold each value until the next, read once a second
+        k = 0
+        for second in range(int(rows[-1]["seconds"] - rows[0]["seconds"])):
+            while k + 1 < len(rows) and rows[k + 1]["seconds"] - rows[0]["seconds"] <= second:
+                k += 1
+            per_second.append(rows[k]["power"])
+        for a, b in zip(rows, rows[1:]):
+            zones[sum(a["power"] >= share * FTP for share in STEPS)] += b["seconds"] - a["seconds"]
         room += [row["room temperature"] for row in rows if row.get("room temperature")]
         pedalling += [row["cadence"] for row in rows if row["cadence"] >= 40]  # the mean is taken from what was measured
         offset += rows[-1]["seconds"]
@@ -191,7 +202,8 @@ def analyse(paths: list[Path], temperature: float | None, betablocker: bool, tri
         "runs": runs, "series": series, "sections": parts, "seconds": offset, "kj": work, "kcal": work / 4.185 / EFFICIENCY,
         "power": work * 1000 / offset, "power_max": max(run["power_max"] for run in runs),
         "cadence": mean(pedalling) if pedalling else 0, "pulse_max": max(pulses) if pulses else None,
-        "distance": distance / 1000, "speed_max": speed,
+        "distance": distance / 1000, "speed_max": speed, "ftp": FTP, "zones": zones,
+        "curve": [{"seconds": span, "power": best_mean(per_second, span)[0]} for span in CURVE if span <= len(per_second)],
         # Measured during the ride if the log has it, otherwise whatever was passed in.
         "temperature": mean(room) if room else temperature,
         "levels": [{"target": target, "seconds": level["seconds"], "power": level["work"] / level["seconds"],
@@ -289,9 +301,11 @@ PAGE = """<!doctype html>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
   :root { color-scheme: light dark; --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
-          --grid: #e1e0d9; --axis: #c3c2b7; --series-1: #2a78d6; --series-2: #eb6834; }
+          --grid: #e1e0d9; --axis: #c3c2b7; --series-1: #2a78d6; --series-2: #eb6834;
+          --step-1: #2e9f4d; --step-2: #d9b300; --step-3: #f08a24; --step-4: #d6362f; --step-5: #7b3fa0; }
   @media (prefers-color-scheme: dark) { :root { --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --grid: #2c2c2a;
-          --axis: #383835; --series-1: #3987e5; --series-2: #d95926; } }
+          --axis: #383835; --series-1: #3987e5; --series-2: #d95926;
+          --step-1: #3fb760; --step-2: #f0d03c; --step-3: #f59a3a; --step-4: #e5484d; --step-5: #9a5fd0; } }
   body { margin: 0; padding: 20px 16px 40px; background: var(--page); color: var(--ink); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   main { max-width: 1040px; margin: 0 auto; }
   h1 { font-size: 22px; margin: 0; }
@@ -336,6 +350,10 @@ PAGE = """<!doctype html>
   <div class="card"><h2>Puls im Verlauf</h2><div class="note">Gleitendes Mittel über __SMOOTH__ Sekunden</div><div class="plot low" id="pulse"></div></div>
   <div class="card"><h2>Trittfrequenz im Verlauf</h2><div class="note">Gleitendes Mittel über __CADENCE__ Sekunden</div><div class="plot low" id="cadence"></div></div>
 </section>
+<section class="pair">
+  <div class="card"><h2>Beste mittlere Leistung je Dauer</h2><div class="note">Höchster Mittelwert, der in dieser Fahrt so lange gehalten wurde</div><div class="plot low" id="curve"></div></div>
+  <div class="card"><h2>Zeit je Intensitätsstufe</h2><div class="note">Stufen des Kalenders: Leistung als Anteil der FTP von __FTP__ W</div><div class="plot low" id="zones"></div></div>
+</section>
 <section class="card"><h2>Ist gegen Vorgabe je Abschnitt</h2><div class="note">Mittlere Leistung jedes Abschnitts mit gleicher Vorgabe, dazu der höchste Einzelwert</div><div class="plot" id="bars"></div></section>
 <section class="pair">
   <div class="card"><h2>Abschnitte</h2><div class="note">Fett: die harten Abschnitte</div><div class="scroll"><table id="sections"></table></div></div>
@@ -350,6 +368,7 @@ PAGE = """<!doctype html>
 const D = __DATA__;
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const n = (value, digits = 0) => value === null || value === undefined ? "–" : value.toLocaleString("de-DE", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+const span = (seconds) => seconds < 60 ? `${seconds} s` : `${n(seconds / 60)} min`;
 const clock = (seconds) => `${Math.floor(Math.round(seconds) / 60)}:${String(Math.round(seconds) % 60).padStart(2, "0")}`;
 const breaks = D.runs.filter((run) => run.pause !== null);
 const work = D.sections.filter((s) => s.work);
@@ -382,6 +401,8 @@ if (work.length) {
   if (over.length) remarks.push(`<b>${over.length} Abschnitte schossen über:</b> Spitzen bis ${n(Math.max(...over.map((s) => s.power_max)))} W bei ${n(mean(over, "cadence"))} Umdrehungen im Mittel` +
     (over.length < work.length ? `; in den übrigen waren es ${n(mean(work.filter((s) => !over.includes(s)), "cadence"))} Umdrehungen.` : "."));
 }
+remarks.push(`<b>${clock(D.zones.at(-1))} von ${clock(D.seconds)} min bei der FTP (${n(D.ftp)} W) oder darüber</b>, ` +
+  `${clock(D.zones.at(-1) + D.zones.at(-2))} min ab ${n(__STEPS__.at(-2) * 100)} % der FTP.`);
 remarks.push(`<b>Höchster Einzelwert ${n(D.power_max)} W</b> bei ${clock(D.peak_at)} min, als die Vorgabe ${n(D.peak_target)} W war` +
   (work.some((s) => Math.abs(s.start + s.seconds - D.peak_at) < 5 || Math.abs(s.start - D.peak_at) < 5) ? " – ein Ausschlag am Wechsel, kein gehaltener Wert." : "."));
 if (U) remarks.push(`<b>${U.before ? "Davor" : "Danach"} ${clock(U.seconds)} min ohne Aufzeichnung</b> mit ${n(U.kcal)} kcal, daraus etwa ${n(U.power)} W und ${n(U.kj)} kJ${U.pulse ? ` und Puls ${n(U.pulse)}` : ""}, wie das Display sie zeigte; in den Kurven und Abschnitten fehlt dieser Teil.`);
@@ -450,6 +471,23 @@ function draw() {
     { name: "Spitze", x: mid, y: D.sections.map((s) => s.power_max), mode: "markers", marker: { color: surface, size: 8, line: { color: s1, width: 2 } },
       hovertemplate: "Spitze %{y:.0f} W<extra></extra>" },
   ], { ...base, hovermode: "closest", margin: { ...base.margin, b: 70 }, yaxis: { ...axis, title: title("Leistung (W)"), rangemode: "tozero" } }, config);
+  // the FTP as a dashed line across the power curve; the intensity steps coloured as in the calendar
+  const ftp = { shapes: [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: D.ftp, y1: D.ftp, line: { color: s2, width: 2, dash: "dash" } }],
+                annotations: [{ xref: "paper", x: 1, xanchor: "left", y: D.ftp, text: ` FTP ${n(D.ftp)} W`, showarrow: false, font: { color: ink, size: 12 } }] };
+  const ticks = [1, 5, 30, 60, 300, 1200, 3600].filter((seconds) => seconds <= (D.curve.at(-1)?.seconds ?? 0));
+  Plotly.react("curve", [
+    { x: D.curve.map((point) => point.seconds), y: D.curve.map((point) => point.power), mode: "lines+markers", line: { color: s1, width: 2 }, marker: { color: s1, size: 6 },
+      customdata: D.curve.map((point) => span(point.seconds)), hovertemplate: "%{customdata}: %{y:.0f} W<extra></extra>" },
+  ], { ...base, ...ftp, margin: { ...base.margin, r: 84 }, hovermode: "closest", showlegend: false, yaxis: { ...axis, title: title("Leistung (W)") },
+       xaxis: { ...axis, type: "log", title: title("Dauer"), showgrid: false, tickvals: ticks, ticktext: ticks.map(span) } }, config);
+  const edges = __STEPS__, last = edges.length;
+  const names = D.zones.map((_, index) => index === 0 ? `unter ${n(edges[0] * 100)} %` : index === last ? `ab ${n(edges[last - 1] * 100)} %` : `${n(edges[index - 1] * 100)}–${n(edges[index] * 100)} %`);
+  Plotly.react("zones", [
+    { type: "bar", x: names, y: D.zones.map((seconds) => seconds / 60), marker: { color: D.zones.map((_, index) => css(`--step-${index + 1}`)) },
+      text: D.zones.map((seconds) => clock(seconds)), textposition: "outside", textfont: { color: ink, size: 12 }, cliponaxis: false,
+      customdata: D.zones.map((seconds) => [clock(seconds), n(seconds / D.seconds * 100)]), hovertemplate: "%{x}: %{customdata[0]} min (%{customdata[1]} % der Fahrt)<extra></extra>" },
+  ], { ...base, hovermode: "closest", showlegend: false, yaxis: { ...axis, title: title("Zeit (min)"), rangemode: "tozero" },
+       xaxis: { ...axis, title: title("Anteil der FTP"), showgrid: false, type: "category" } }, config);
 }
 draw();
 addEventListener("load", () => document.querySelectorAll(".plot").forEach((plot) => Plotly.Plots.resize(plot)));
@@ -497,7 +535,7 @@ def main():
     # lauf-<yy-mm-dd-hh-mm-ss>.html from the start of the ride, as the calendar expects, also for a roma-ride-*.csv
     out = paths[0].with_name(paths[0].stem.replace("log-", "lauf-") + ".html" if paths[0].stem.startswith("log-") else
                              f"lauf-{first[2:4]}-{first[5:7]}-{first[8:10]}-{first[11:13]}-{first[14:16]}-{first[17:19]}.html")
-    out.write_text(PAGE.replace("__DATE__", date).replace("__SMOOTH__", str(SMOOTH_SECONDS)).replace("__CADENCE__", str(CADENCE_SECONDS)).replace("__OVERSHOOT__", str(OVERSHOOT))
+    out.write_text(PAGE.replace("__DATE__", date).replace("__SMOOTH__", str(SMOOTH_SECONDS)).replace("__CADENCE__", str(CADENCE_SECONDS)).replace("__OVERSHOOT__", str(OVERSHOOT)).replace("__FTP__", f"{FTP:g}").replace("__STEPS__", json.dumps(STEPS))
                    .replace("__EFFICIENCY__", f"{EFFICIENCY * 100:.0f}").replace("__DATA__", json.dumps(result)))
 
     for run in result["runs"]:
